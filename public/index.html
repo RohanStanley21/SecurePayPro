@@ -1175,7 +1175,29 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
       </div>
     </div>
   </div>
-
+<!-- BLOCKED TRANSACTIONS -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-header" style="padding-bottom:12px">
+    <div class="card-title">🚫 Blocked Transactions</div>
+    <span id="blockedCountBadge" style="background:var(--red-light);color:var(--red);
+      font-size:11px;font-weight:800;padding:3px 10px;border-radius:100px">0 blocked</span>
+  </div>
+  <div class="card-body" style="padding-top:0">
+    <table class="m-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Recipient</th>
+          <th>Amount</th>
+          <th>Fraud Score</th>
+          <th>Reason</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody id="blockedLogBody"></tbody>
+    </table>
+  </div>
+</div>
   <!-- TRANSACTION TABLE -->
   <div class="card">
     <div class="card-header" style="padding-bottom:12px">
@@ -2504,6 +2526,15 @@ const receiver = (receiverEl.dataset.resolvedEmail || receiverEl.value).trim();
     const currentScore = computeFraudScore();
     if (currentScore >= getBlockThreshold()) {
       showBlockedModal(currentScore, window._lastFraudFactors || []);
+       const blocked = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
+  blocked.unshift({
+    receiver: receiver,
+    amount: amount,
+    score: currentScore,
+    timestamp: new Date().toISOString(),
+    factors: (window._lastFraudFactors || []).map(f => f.label)
+  });
+  safeStorage.setItem("sp_blocked_txns", JSON.stringify(blocked.slice(0, 20)));
       btn.innerHTML = 'Send Money →';
       btn.disabled  = false;
       return;
@@ -3634,11 +3665,13 @@ async function refreshAdmin() {
     renderAdminAlerts(allAdminTxns);
     renderAdminCats(allAdminTxns);
     renderAdminPlatStats(allAdminTxns, data);
+    renderBlockedLog();
 
   } catch (err) {
     if (msgEl) msgEl.innerHTML = "";
     // Demo mode: build from local transactions
     renderAdminTable([]);
+    renderBlockedLog();
     toast("Admin: using demo data (no backend)", "info");
   }
 }
@@ -3752,7 +3785,66 @@ function renderAdminAlerts(txns) {
       <span class="chip chip-red" style="font-size:10px">${t.isFraud?"FRAUD":"HIGH"}</span>
     </div>`).join("");
 }
+function renderBlockedLog() {
+  const blocked = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
+  const tbody   = document.getElementById("blockedLogBody");
+  const badge   = document.getElementById("blockedCountBadge");
 
+  if (badge) badge.textContent = blocked.length + " blocked";
+
+  if (!tbody) return;
+
+  if (!blocked.length) {
+    tbody.innerHTML = `<tr>
+      <td colspan="6" style="text-align:center;color:var(--text2);padding:28px">
+        ✅ No blocked transactions yet — try sending ₹60,000 to test it
+      </td>
+    </tr>`;
+    return;
+  }
+
+  tbody.innerHTML = blocked.map((b, i) => {
+    const scoreColor = b.score >= 90 ? "var(--red)"
+                     : b.score >= 75 ? "var(--orange)"
+                     : "var(--text2)";
+    const scoreBg    = b.score >= 90 ? "var(--red-light)"
+                     : b.score >= 75 ? "var(--orange-light)"
+                     : "var(--surface2)";
+
+    const signals = (b.factors || []).map(f =>
+      `<span style="display:inline-flex;font-size:10px;font-weight:700;
+        padding:2px 8px;border-radius:100px;
+        background:var(--red-light);color:var(--red);
+        border:1px solid rgba(239,35,60,.15);
+        margin:2px;white-space:nowrap">${f}</span>`
+    ).join("");
+
+    const timeStr = b.timestamp
+      ? new Date(b.timestamp).toLocaleString("en-IN", {
+          day:"numeric", month:"short",
+          hour:"2-digit", minute:"2-digit"
+        })
+      : "—";
+
+    return `<tr>
+      <td style="color:var(--text3);font-size:11px;font-weight:700">#${i + 1}</td>
+      <td style="font-size:13px;font-weight:600;
+        font-family:'JetBrains Mono',monospace">${b.receiver || "—"}</td>
+      <td style="font-weight:800;color:var(--red)">₹${fmt(b.amount || 0)}</td>
+      <td>
+        <span style="display:inline-flex;align-items:center;justify-content:center;
+          min-width:48px;height:28px;border-radius:8px;
+          font-size:12px;font-weight:800;
+          font-family:'JetBrains Mono',monospace;
+          background:${scoreBg};color:${scoreColor}">
+          ${b.score}
+        </span>
+      </td>
+      <td style="max-width:200px">${signals || "—"}</td>
+      <td style="font-size:11px;color:var(--text2)">${timeStr}</td>
+    </tr>`;
+  }).join("");
+}
 function renderAdminCats(txns) {
   const el = document.getElementById("adminCatBreakdown");
   if (!el) return;
