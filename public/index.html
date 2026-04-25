@@ -1380,7 +1380,43 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   </div>
 </div>
 <!-- end linkBankModal -->
-
+<!-- TRANSACTION BLOCKED MODAL -->
+<div class="overlay" id="blockedModal">
+  <div class="modal-sheet" style="max-width:420px">
+    <div class="modal-handle"></div>
+    <div style="padding:20px 24px 0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--red-light);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🚫</div>
+        <div>
+          <div style="font-size:17px;font-weight:800;color:var(--red)">Transaction Blocked</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Fraud score exceeded safety threshold</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div style="background:var(--red-light);border-radius:12px;padding:12px;border:1px solid rgba(239,35,60,.15)">
+          <div style="font-size:10px;color:var(--red);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Fraud Score</div>
+          <div style="font-size:24px;font-weight:800;color:var(--red)" id="blockedScore">—</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:12px;padding:12px;border:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">Block Threshold</div>
+          <div style="font-size:24px;font-weight:800" id="blockedThreshold">—</div>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Why this was blocked</div>
+        <div id="blockedFactorsList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+      <div style="background:var(--orange-light);border-radius:12px;padding:12px;border:1px solid rgba(251,133,0,.2);margin-bottom:16px;font-size:12px;color:var(--orange);font-weight:600;line-height:1.6">
+        ⚠️ This transaction was flagged for your safety. No money has been deducted from your account.
+      </div>
+    </div>
+    <div style="padding:0 24px 24px">
+      <button class="btn btn-primary btn-full" onclick="closeModal('blockedModal');pendingPayment=null">
+        Got it, go back
+      </button>
+    </div>
+  </div>
+</div>
 <!-- PAYMENT PIN MODAL -->
 <div class="overlay" id="paymentPinModal">
   <div class="modal-sheet" style="max-width:380px;text-align:center">
@@ -2341,7 +2377,107 @@ function pickNoteChip(el, label) {
   el.classList.add("active");
   document.getElementById("sendNote").value = label;
 }
+// ═══════════════════════════════════════
+// FRAUD BLOCK SYSTEM
+// ═══════════════════════════════════════
+function getBlockThreshold() {
+  return 80; // fixed threshold
+}
 
+function computeFraudScore() {
+  const amount     = parseFloat(document.getElementById("sendAmount").value) || 0;
+  const location   = document.getElementById("sendLocation").value.trim();
+  const receiverEl = document.getElementById("sendReceiver");
+  const receiver   = receiverEl.dataset.resolvedEmail || receiverEl.value.trim();
+  const note       = document.getElementById("sendNote").value.trim();
+
+  let score = 0;
+  const factors = [];
+
+  // Amount
+  if (amount > 50000)      { score += 55; factors.push({ label:"Very large amount",   color:"var(--red)",    icon:"🔴" }); }
+  else if (amount > 20000) { score += 35; factors.push({ label:"High amount",         color:"var(--orange)", icon:"🟠" }); }
+  else if (amount > 5000)  { score += 15; factors.push({ label:"Medium amount",       color:"var(--orange)", icon:"🟡" }); }
+  else if (amount > 0)     { score +=  5; factors.push({ label:"Low amount",          color:"var(--green)",  icon:"🟢" }); }
+
+  // Round number
+  if (amount > 0 && amount % 1000 === 0) {
+    score += 10;
+    factors.push({ label:"Exact round number", color:"var(--orange)", icon:"🔢" });
+  }
+
+  // Velocity — multiple txns in last 10 mins
+  const recentTxns = appState.transactions.filter(t => {
+    const age = Date.now() - new Date(t.createdAt).getTime();
+    return age < 10 * 60 * 1000 && t.sender.toLowerCase() === appState.email.toLowerCase();
+  });
+  if (recentTxns.length >= 3)      { score += 40; factors.push({ label:`${recentTxns.length} txns in 10 min`, color:"var(--red)",    icon:"⚡" }); }
+  else if (recentTxns.length >= 2) { score += 20; factors.push({ label:"Rapid transactions",                  color:"var(--orange)", icon:"⚡" }); }
+
+  // Behavioural baseline
+  const myTxns = appState.transactions.filter(t =>
+    t.sender.toLowerCase() === appState.email.toLowerCase()
+  );
+  if (myTxns.length >= 3) {
+    const avg = myTxns.reduce((s, t) => s + t.amount, 0) / myTxns.length;
+    if (amount > avg * 3)        { score += 25; factors.push({ label:`${Math.round(amount/avg)}× your usual amount`, color:"var(--red)",    icon:"📊" }); }
+    else if (amount > avg * 1.5) { score += 10; factors.push({ label:"Above your average",                           color:"var(--orange)", icon:"📊" }); }
+  }
+
+  // New recipient
+  const known = appState.transactions.map(t => t.receiver.toLowerCase());
+  if (receiver && !known.includes(receiver.toLowerCase())) {
+    score += 15; factors.push({ label:"New recipient",   color:"var(--orange)", icon:"👤" });
+  } else if (receiver) {
+    factors.push({ label:"Known recipient", color:"var(--green)", icon:"✅" });
+  }
+
+  // No location
+  if (!location) {
+    score += 20; factors.push({ label:"No location set", color:"var(--orange)", icon:"📍" });
+  }
+
+  // Odd hours
+  const hour = new Date().getHours();
+  if (hour < 5 || hour >= 23) {
+    score += 10; factors.push({ label:"Late-night transaction", color:"var(--orange)", icon:"🌙" });
+  }
+
+  // Category mismatch
+  if (amount > 10000 && note && ["food","medicine"].some(c => note.toLowerCase().includes(c))) {
+    score += 15; factors.push({ label:"Category vs amount mismatch", color:"var(--red)", icon:"⚠️" });
+  }
+
+  // Balance depletion
+  if (amount > appState.balance * 0.9)      { score += 20; factors.push({ label:"Drains 90%+ of balance", color:"var(--red)",    icon:"💸" }); }
+  else if (amount > appState.balance * 0.7) { score += 10; factors.push({ label:"Near balance limit",     color:"var(--orange)", icon:"⚠️" }); }
+
+  // Low KYC
+  if (appState.kycStep < 2 && amount > 5000) {
+    score += 15; factors.push({ label:"Low KYC + high amount", color:"var(--red)", icon:"🔐" });
+  }
+
+  score = Math.min(100, score);
+  window._lastFraudFactors = factors; // cache for modal
+  return score;
+}
+
+function showBlockedModal(score, factors) {
+  const threshold = getBlockThreshold();
+  document.getElementById("blockedScore").textContent     = score + " / 100";
+  document.getElementById("blockedThreshold").textContent = threshold + " / 100";
+
+  document.getElementById("blockedFactorsList").innerHTML = factors.map(f =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;
+      padding:4px 10px;border-radius:100px;
+      background:${f.color === "var(--red)" ? "var(--red-light)" : f.color === "var(--orange)" ? "var(--orange-light)" : "var(--green-light)"};
+      color:${f.color};border:1px solid var(--border)">
+      ${f.icon} ${f.label}
+    </span>`
+  ).join("");
+
+  openModal("blockedModal");
+}
 // ═══════════════════════════════════════
 // SEND MONEY
 // ═══════════════════════════════════════
@@ -2360,10 +2496,19 @@ const receiver = (receiverEl.dataset.resolvedEmail || receiverEl.value).trim();
   if (!amount || amount <= 0) { errEl.textContent = 'Please enter a valid amount ❌'; errEl.classList.add('show'); return; }
   if (amount > appState.balance) { errEl.textContent = `Insufficient balance ❌ You have ₹${fmt(appState.balance)}`; errEl.classList.add('show'); return; }
 
-  btn.innerHTML = '<span class="spinner"></span> Checking...';
+    btn.innerHTML = '<span class="spinner"></span> Checking...';
   btn.disabled  = true;
 
   try {
+    // ── Check fraud score before hitting server ──
+    const currentScore = computeFraudScore();
+    if (currentScore >= getBlockThreshold()) {
+      showBlockedModal(currentScore, window._lastFraudFactors || []);
+      btn.innerHTML = 'Send Money →';
+      btn.disabled  = false;
+      return;
+    }
+
     const data = await api('POST', 'payment/send-otp', { amount, location });
 
     // Store pending payment details for later
