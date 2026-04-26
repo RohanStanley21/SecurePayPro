@@ -1580,8 +1580,31 @@ async function api(method, path, body) {
 // ═══════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
   if (appState.darkMode) applyTheme(true);
-  if (appState.token) bootApp();
-  else showScreen("loginScreen");
+
+  // Always verify token with server on fresh page load
+  if (appState.token) {
+    fetch(API + "auth/profile", {
+      headers: { "Authorization": "Bearer " + appState.token }
+    })
+    .then(res => {
+      if (res.ok) {
+        bootApp();
+      } else {
+        // Token invalid/expired — clear and show login
+        safeStorage.removeItem("sp_token");
+        appState.token = null;
+        showScreen("loginScreen");
+      }
+    })
+    .catch(() => {
+      // Server not reachable — clear token, force login
+      safeStorage.removeItem("sp_token");
+      appState.token = null;
+      showScreen("loginScreen");
+    });
+  } else {
+    showScreen("loginScreen");
+  }
 
   // OTP input bindings
   for (let i = 0; i < 6; i++) {
@@ -3654,10 +3677,14 @@ async function refreshAdmin() {
     const s = data.summary || {};
 
     // ── KPI Cards ──
-    animateCounter("adminVol",     s.totalAmount        || 0, true);
-    animateCounter("adminTxCount", s.totalTransactions  || 0);
-    animateCounter("adminFraud",   s.fraudCount         || 0);
-    animateCounter("adminHR",      s.highRisk           || 0);
+    animateCounter("adminVol",     s.totalAmount       || 0, true);
+    animateCounter("adminTxCount", s.totalTransactions || 0);
+
+    // Count fraud flags = isFraud txns + blocked txns from localStorage
+    const blockedCount = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]").length;
+    const fraudFlagCount = (s.fraudCount || 0) + blockedCount;
+    animateCounter("adminFraud",   fraudFlagCount);
+    animateCounter("adminHR",      s.highRisk || 0);
 
     if (msgEl) msgEl.innerHTML = "";
     renderAdminTable(allAdminTxns);
@@ -3768,22 +3795,50 @@ function renderAdminAlerts(txns) {
   const el      = document.getElementById("adminAlertsList");
   const countEl = document.getElementById("adminAlertCount");
   if (!el) return;
+
+  // High-risk txns from backend
   const flagged = txns.filter(t => t.isFraud || t.riskLevel === "HIGH" || t.riskLevel === "CRITICAL");
-  if (countEl) countEl.textContent = flagged.length + " alerts";
-  if (!flagged.length) {
+
+  // Blocked txns from localStorage
+  const blocked = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
+  const blockedAlerts = blocked.map(b => ({
+    _isBlocked: true,
+    sender: appState.email,
+    receiver: b.receiver,
+    amount: b.amount,
+    score: b.score,
+    createdAt: b.timestamp,
+    factors: b.factors || []
+  }));
+
+  const allAlerts = [...blockedAlerts, ...flagged];
+  if (countEl) countEl.textContent = allAlerts.length + " alerts";
+
+  if (!allAlerts.length) {
     el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--green);font-size:13px;font-weight:600">✅ No fraud alerts right now</div>';
     return;
   }
-  el.innerHTML = flagged.slice(0,5).map(t => `
+
+  el.innerHTML = allAlerts.slice(0, 8).map(t => {
+    const isBlocked = t._isBlocked;
+    const label     = isBlocked ? "BLOCKED" : (t.isFraud ? "FRAUD" : "HIGH");
+    const chipClass = isBlocked ? "chip-red" : "chip-red";
+    const icon      = isBlocked ? "🚫" : "🚨";
+    const subtext   = isBlocked
+      ? `${t.sender} → ${t.receiver} · Score: ${t.score}`
+      : `${t.sender} → ₹${fmt(t.amount)}`;
+    return `
     <div style="padding:10px 0;border-bottom:1px solid var(--surface2);display:flex;gap:10px;align-items:center">
-      <div style="font-size:18px">🚨</div>
+      <div style="font-size:18px">${icon}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:700;color:var(--red)">${t.riskLevel} RISK</div>
-        <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.sender} → ₹${fmt(t.amount)}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--red)">${isBlocked ? "BLOCKED — Fraud Score: " + t.score : t.riskLevel + " RISK"}</div>
+        <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtext}</div>
+        ${isBlocked && t.factors.length ? `<div style="font-size:10px;color:var(--orange);margin-top:2px">${t.factors.slice(0,2).join(" · ")}</div>` : ""}
         <div style="font-size:10px;color:var(--text3)">${t.createdAt ? fmtDate(t.createdAt) : ""}</div>
       </div>
-      <span class="chip chip-red" style="font-size:10px">${t.isFraud?"FRAUD":"HIGH"}</span>
-    </div>`).join("");
+      <span class="chip ${chipClass}" style="font-size:10px">${label}</span>
+    </div>`;
+  }).join("");
 }
 function renderBlockedLog() {
   const blocked = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
@@ -3872,7 +3927,10 @@ function renderAdminPlatStats(txns, apiData) {
 
   const userCount     = apiData?.userCount ?? '—';
   const avgTxn        = txns.length ? Math.round(txns.reduce((s,t) => s + t.amount, 0) / txns.length) : 0;
-  const fraudRate     = txns.length ? ((txns.filter(t => t.isFraud).length / txns.length) * 100).toFixed(1) : 0;
+  const blockedTxns = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
+const fraudCount = txns.filter(t => t.isFraud).length + blockedTxns.length;
+const totalForRate = txns.length + blockedTxns.length;
+const fraudRate = totalForRate ? ((fraudCount / totalForRate) * 100).toFixed(1) : 0;
   const uniqueSenders = new Set(txns.map(t => t.sender)).size;
 
   el.innerHTML = `
