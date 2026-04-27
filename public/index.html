@@ -260,8 +260,8 @@ body{font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);min-he
 .vcard-type{position:absolute;top:22px;right:22px;font-size:16px;font-weight:800;color:white;opacity:.9}
 .vcard-circle1{position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.07)}
 .vcard-circle2{position:absolute;bottom:-40px;left:-20px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.05)}
-.vcard-frozen{position:absolute;inset:0;background:rgba(8,13,23,.75);display:none;align-items:center;justify-content:center;border-radius:22px;backdrop-filter:blur(4px)}
-.vcard-frozen.show{display:flex}
+.vcard-frozen{position:absolute;inset:0;background:rgba(8,13,23,.75);display:none;align-items:center;justify-content:center;border-radius:22px;backdrop-filter:blur(4px);z-index:10}
+.vcard-frozen.show{display:flex !important}
 .progress-wrap{background:var(--surface2);border-radius:4px;height:6px;overflow:hidden}
 .progress-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--primary),var(--secondary));transition:width 1s ease}
 .loan-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--card-shadow);transition:all .25s}
@@ -445,6 +445,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   background: var(--bg);
   padding: 20px;
 }
+#adminAlertsList { max-height: 240px; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -1144,11 +1145,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
     <div class="card">
       <div class="card-header"><div class="card-title">📈 Transaction Volume</div><span style="font-size:11px;color:var(--text3)">Last 6 months</span></div>
-      <div class="card-body"><div style="height:200px"><canvas id="adminChart"></canvas></div></div>
+      <div class="card-body"><div style="height:200px;position:relative"><canvas id="adminChart"></canvas></div></div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">🎯 Risk Distribution</div></div>
-      <div class="card-body"><div style="height:200px"><canvas id="adminRiskChart"></canvas></div></div>
+      <div class="card-body"><div style="height:200px;position:relative"><canvas id="adminRiskChart"></canvas></div></div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">⚡ Live Fraud Alerts</div>
@@ -1488,6 +1489,7 @@ const safeStorage = (() => {
   const mem = {};
   const ls = (() => { try { localStorage.setItem('_t','1'); localStorage.removeItem('_t'); return localStorage; } catch(e) { return null; } })();
   return {
+    _mem:       mem,
     getItem:    k     => ls ? ls.getItem(k)     : (mem[k] ?? null),
     setItem:    (k,v) => { if (ls) ls.setItem(k, v);    else mem[k] = v; },
     removeItem: k     => { if (ls) ls.removeItem(k);    else delete mem[k]; }
@@ -1738,8 +1740,13 @@ async function doLogin() {
       appState.trustScore = user.trustScore ?? 100;
       appState.kycStep    = user.kycStep    ?? 1;
       safeStorage.setItem("sp_token", appState.token);
-      saveState();
-      bootApp();
+safeStorage.setItem("demo_user_" + email, JSON.stringify({
+  name: appState.name, email, password, phone: appState.phone || "",
+  balance: appState.balance, rewardPts: appState.rewardPts,
+  trustScore: appState.trustScore, kycStep: appState.kycStep, role: appState.role
+}));
+saveState();
+bootApp();
       toast("Welcome back, " + (appState.name || email.split("@")[0]) + "! 👋 (Demo Mode)", "success");
     } else {
       errEl.textContent = err.name === "AbortError"
@@ -1827,20 +1834,35 @@ async function bootApp() {
   document.getElementById("profAddress").value = appState.address || "";
   document.getElementById("vcardHolder").textContent = displayName.toUpperCase();
   const upiEl = document.getElementById("upiIdEl");
-  if (upiEl) upiEl.textContent = appState.email.replace("@","_at_") + "@securepay";
-
+  if (upiEl) upiEl.textContent = appState.email.split("@")[0] + "@securepay";
   if (appState.role === "admin") addAdminNav();
-  if (appState.cardFrozen) {
+ if (appState.cardFrozen) {
     const overlay = document.getElementById("cardFrozenOverlay");
     if (overlay) overlay.classList.add("show");
     const btn = document.getElementById("freezeBtn");
-    if (btn) { btn.textContent = "🔥 Unfreeze Card"; btn.style.background = "var(--red-light)"; btn.style.color = "var(--red)"; }
+    if (btn) {
+      btn.innerHTML        = "🔥 Unfreeze Card";
+      btn.style.background = "var(--red-light)";
+      btn.style.color      = "var(--red)";
+      btn.style.border     = "1px solid rgba(239,35,60,.2)";
+    }
   }
   refreshDashboard();
   loadTransactions();
   loadActiveLoans();
-  renderLinkedBanks();
-  renderKYCStepper();
+renderLinkedBanks();
+
+// Restore saved spend limit
+const savedSpendLimit = safeStorage.getItem('sp_spend_limit');
+if (savedSpendLimit) {
+  const rangeEl = document.getElementById('spendLimitRange');
+  if (rangeEl) {
+    rangeEl.value = savedSpendLimit;
+    updateSpendLimit();
+  }
+}
+
+renderKYCStepper();
   setTimeout(() => { initDashChart(); updateAnalyticsTrust(appState.trustScore); }, 200);
   // Load notifications after bootApp (startNotifPolling called from login/unlockApp)
   loadNotifications();
@@ -2446,10 +2468,10 @@ function computeFraudScore() {
   else if (amount > 0)     { score +=  5; factors.push({ label:"Low amount",          color:"var(--green)",  icon:"🟢" }); }
 
   // Round number
-  if (amount > 0 && amount % 1000 === 0) {
-    score += 10;
-    factors.push({ label:"Exact round number", color:"var(--orange)", icon:"🔢" });
-  }
+ if (amount > 0 && amount % 1000 === 0) {
+  score += 5;  // was 10
+  factors.push({ label:"Exact round number", color:"var(--orange)", icon:"🔢" });
+}
 
   // Velocity — multiple txns in last 10 mins
   const recentTxns = appState.transactions.filter(t => {
@@ -2471,16 +2493,18 @@ function computeFraudScore() {
 
   // New recipient
   const known = appState.transactions.map(t => t.receiver.toLowerCase());
-  if (receiver && !known.includes(receiver.toLowerCase())) {
-    score += 15; factors.push({ label:"New recipient",   color:"var(--orange)", icon:"👤" });
-  } else if (receiver) {
+ if (receiver && !known.includes(receiver.toLowerCase())) {
+  score += 10;  // was 15
+  factors.push({ label:"New recipient", color:"var(--orange)", icon:"👤" });
+}else if (receiver) {
     factors.push({ label:"Known recipient", color:"var(--green)", icon:"✅" });
   }
 
   // No location
   if (!location) {
-    score += 20; factors.push({ label:"No location set", color:"var(--orange)", icon:"📍" });
-  }
+  score += 10;  // was 20
+  factors.push({ label:"No location set", color:"var(--orange)", icon:"📍" });
+}
 
   // Odd hours
   const hour = new Date().getHours();
@@ -2540,6 +2564,22 @@ const receiver = (receiverEl.dataset.resolvedEmail || receiverEl.value).trim();
   if (!receiver)          { errEl.textContent = 'Please enter a recipient email or UPI ID ❌'; errEl.classList.add('show'); return; }
   if (!amount || amount <= 0) { errEl.textContent = 'Please enter a valid amount ❌'; errEl.classList.add('show'); return; }
   if (amount > appState.balance) { errEl.textContent = `Insufficient balance ❌ You have ₹${fmt(appState.balance)}`; errEl.classList.add('show'); return; }
+
+  // Per-transaction spend limit cap
+  const spendLimitEl = document.getElementById('spendLimitRange');
+  const spendLimit = spendLimitEl ? parseInt(spendLimitEl.value) : 100000;
+  const savedLimit = parseInt(safeStorage.getItem('sp_spend_limit') || spendLimit);
+  if (amount > savedLimit) {
+    errEl.textContent = `Amount exceeds your per-transaction limit of ₹${fmt(savedLimit)}. Update it in Wallet → Spending Limit.`;
+    errEl.classList.add('show');
+    return;
+  }
+    // Block if card is frozen
+  if (appState.cardFrozen) {
+    errEl.textContent = '🥶 Your card is frozen. Unfreeze it in Wallet → Freeze Card before sending.';
+    errEl.classList.add('show');
+    return;
+  }
 
     btn.innerHTML = '<span class="spinner"></span> Checking...';
   btn.disabled  = true;
@@ -2674,17 +2714,20 @@ async function verifyOTP() {
   btn.innerHTML = '<span class="spinner"></span>';
   btn.disabled  = true;
   try {
-    const { receiver, amount, location } = pendingPayment;
-    const fee  = calcPlatformFee(amount);
-    const note = document.getElementById("sendNote").value.trim();
-    const data = await api("POST", "payment/verify-otp", {
-      receiver, amount, platformFee: fee, otp, location, note, skipOtp: false
+    // ✅ dryRun: only validates OTP on server, does NOT move money
+    await api("POST", "payment/verify-otp", {
+      amount: pendingPayment.amount,
+      location: pendingPayment.location,
+      otp,
+      dryRun: true      // ← key change
     });
-    // Save OTP response, then ask for PIN
-    pendingPayment.otpData = { ...data, alreadyCompleted: true };
+
+    pendingPayment.validatedOtp = otp;
+    pendingPayment.otpData = { alreadyCompleted: false }; // never mark complete here
+
     clearInterval(otpTimerID);
     closeModal("otpModal");
-    setTimeout(() => openPaymentPIN(), 150);
+    setTimeout(() => openPaymentPIN(), 150); // PIN opens AFTER OTP ✅
   } catch (err) {
     errEl.textContent = err.message;
     errEl.classList.add("show");
@@ -2797,28 +2840,39 @@ function backHome() {
   gotoTab("dashboard");
   refreshDashboard();
 }
-
-// ═══════════════════════════════════════
-// WALLET
-// ═══════════════════════════════════════
 function generateCard() {
   const parts = Array.from({length:4}, () => Math.floor(1000+Math.random()*9000));
   document.getElementById("vcardNum").textContent = parts[0] + " •••• •••• " + parts[3];
   toast("New virtual card generated! 💳", "success");
 }
+// ═══════════════════════════════════════
+// WALLET
+// ═══════════════════════════════════════
 function toggleCardFreeze() {
   appState.cardFrozen = !appState.cardFrozen;
   saveState();
   const overlay = document.getElementById("cardFrozenOverlay");
   const btn     = document.getElementById("freezeBtn");
   if (appState.cardFrozen) {
-    overlay.classList.add("show");
-    btn.textContent = "🔥 Unfreeze Card";
-    toast("Card frozen 🥶 No transactions will be allowed.", "warning");
+    if (overlay) overlay.style.display = "flex";
+    overlay?.classList.add("show");
+    if (btn) {
+      btn.textContent      = "🔥 Unfreeze Card";
+      btn.style.background = "var(--red-light)";
+      btn.style.color      = "var(--red)";
+      btn.style.border     = "1px solid rgba(239,35,60,.2)";
+    }
+    toast("Card frozen 🥶 Transactions blocked.", "warning");
   } else {
-    overlay.classList.remove("show");
-    btn.textContent = "🥶 Freeze Card";
-    toast("Card unfrozen ✅", "success");
+    if (overlay) overlay.style.display = "none";
+    overlay?.classList.remove("show");
+    if (btn) {
+      btn.textContent      = "🥶 Freeze Card";
+      btn.style.background = "var(--orange-light)";
+      btn.style.color      = "var(--orange)";
+      btn.style.border     = "1px solid rgba(251,133,0,.2)";
+    }
+    toast("Card unfrozen ✅ Transactions enabled.", "success");
   }
 }
 function updateSpendLimit() {
@@ -2886,21 +2940,21 @@ function cancelPaymentPIN() {
 }
 
 async function finalizePayment() {
-  const { receiver, amount, location, otpData } = pendingPayment;
-  const fee = calcPlatformFee(amount);
+  const { receiver, amount, location, validatedOtp } = pendingPayment;
+  const fee  = calcPlatformFee(amount);
   const note = document.getElementById('sendNote').value.trim();
   try {
-    let data;
-    if (otpData.alreadyCompleted) {
-      data = otpData;
-      if (!data.totalDeducted) data.totalDeducted = amount + fee;
-      if (!data.txnId && data.transaction) data.txnId = data.transaction._id || data.transaction.txnId;
-    // OTP already done — skip second API call
-    } else {
-      data = await api('POST', 'payment/verify-otp', {
-        receiver, amount, platformFee: fee, location, note, skipOtp: true
-      });
-    }
+    // ✅ Money moves HERE — after PIN confirmed
+    const data = await api('POST', 'payment/verify-otp', {
+      receiver,
+      amount,
+      platformFee: fee,
+      location,
+      note,
+      otp: validatedOtp || "",
+      skipOtp: !validatedOtp,  // true only for LOW risk (no OTP was needed)
+      dryRun: false            // ← explicit, this is the real transfer
+    });
     await onPaymentSuccess(data, amount, receiver);
   } catch(err) {
     toast(err.message, 'error');
@@ -3643,23 +3697,90 @@ function initAnalytics() {
   }
   generateSpendInsights();
 }
-function resolveUPIReceiver() {
+async function resolveUPIReceiver() {
   const val = document.getElementById("sendReceiver").value.trim();
   const statusEl = document.getElementById("upiResolveStatus");
-  // UPI format: anything ending in @securepay
-  if (val.includes("@securepay")) {
-    // Reverse-lookup: UPI is built as email.replace("@","_at_") + "@securepay"
-    const originalEmail = val.replace("_at_", "@").replace("@securepay", "");
+  const receiverEl = document.getElementById("sendReceiver");
+
+  if (!val.endsWith("@securepay")) {
+    statusEl.style.display = "none";
+    delete receiverEl.dataset.resolvedEmail;
+    return;
+  }
+
+  const handle = val.replace("@securepay", "").toLowerCase().trim();
+
+  // 1. Check in-memory store first (demo mode)
+  const memStore = safeStorage._mem || {};
+  for (const key of Object.keys(memStore)) {
+    if (key.startsWith("demo_user_")) {
+      const email = key.replace("demo_user_", "");
+      if (email.split("@")[0].toLowerCase().trim() === handle) {
+        statusEl.style.display = "block";
+        statusEl.style.background = "var(--green-light)";
+        statusEl.style.color = "var(--green)";
+        statusEl.innerHTML = `✅ UPI verified — <strong>${email}</strong>`;
+        receiverEl.dataset.resolvedEmail = email;
+        return;
+      }
+    }
+  }
+
+  // 2. Check localStorage (demo mode)
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("demo_user_")) {
+        const email = key.replace("demo_user_", "");
+        if (email.split("@")[0].toLowerCase().trim() === handle) {
+          statusEl.style.display = "block";
+          statusEl.style.background = "var(--green-light)";
+          statusEl.style.color = "var(--green)";
+          statusEl.innerHTML = `✅ UPI verified — <strong>${email}</strong>`;
+          receiverEl.dataset.resolvedEmail = email;
+          return;
+        }
+      }
+    }
+  } catch(e) {}
+
+  // 3. Self-send check
+  if (appState.email && appState.email.split("@")[0].toLowerCase().trim() === handle) {
     statusEl.style.display = "block";
     statusEl.style.background = "var(--green-light)";
     statusEl.style.color = "var(--green)";
-    statusEl.innerHTML = `✅ UPI resolved → <strong>${originalEmail}</strong>`;
-    // Store resolved email for actual payment
-    document.getElementById("sendReceiver").dataset.resolvedEmail = originalEmail;
-  } else {
-    statusEl.style.display = "none";
-    delete document.getElementById("sendReceiver").dataset.resolvedEmail;
+    statusEl.innerHTML = `✅ UPI verified — <strong>${appState.email}</strong>`;
+    receiverEl.dataset.resolvedEmail = appState.email;
+    return;
   }
+
+  // 4. Query backend — resolve UPI handle to real email
+  statusEl.style.display = "block";
+  statusEl.style.background = "var(--surface2)";
+  statusEl.style.color = "var(--text2)";
+  statusEl.innerHTML = `<span class="spinner spinner-dark" style="width:12px;height:12px;border-width:2px"></span> Looking up ${val}…`;
+
+  try {
+    const res = await fetch(API + "auth/resolve-upi?handle=" + encodeURIComponent(handle), {
+      headers: { Authorization: "Bearer " + appState.token }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.email) {
+        statusEl.style.background = "var(--green-light)";
+        statusEl.style.color = "var(--green)";
+        statusEl.innerHTML = `✅ UPI verified — <strong>${data.email}</strong>`;
+        receiverEl.dataset.resolvedEmail = data.email;
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // 5. Not found anywhere
+  statusEl.style.background = "var(--red-light)";
+  statusEl.style.color = "var(--red)";
+  statusEl.innerHTML = `❌ No SecurePay user found for <strong>${val}</strong>`;
+  delete receiverEl.dataset.resolvedEmail;
 }
 // ═══════════════════════════════════════
 // ADMIN

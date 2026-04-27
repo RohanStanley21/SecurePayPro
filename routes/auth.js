@@ -251,5 +251,26 @@ router.post("/kyc-step", auth, async (req, res) => {
     res.status(500).json({ message: "Server error ❌" });
   }
 });
+// ─────────────────────────────────────────────────────────
+// 🔍  RESOLVE UPI HANDLE → EMAIL
+// ─────────────────────────────────────────────────────────
+router.get("/resolve-upi", auth, async (req, res) => {
+  try {
+    const { handle } = req.query;
+    if (!handle) return res.status(400).json({ message: "Handle required" });
 
+    // UPI handle is the part before @ in their email
+    // e.g. handle = "john" → find user whose email starts with "john@"
+    const users = await User.find({}).select("email name");
+    const match = users.find(u =>
+      u.email.split("@")[0].toLowerCase() === handle.toLowerCase().trim()
+    );
+
+    if (!match) return res.status(404).json({ message: "User not found" });
+
+    res.json({ email: match.email, name: match.name });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
 module.exports = router;

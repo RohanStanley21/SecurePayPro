@@ -97,8 +97,12 @@ async function createNotif(userEmail, type, title, message, amount = 0, txnId = 
 // ─────────────────────────────────────────────────────────
 // 🔢  OTP STORES
 // ─────────────────────────────────────────────────────────
-const otpStore     = {};   // keyed by user email — payment OTPs
-const loanOtpStore = {};   // keyed by user email — loan OTPs
+// ─────────────────────────────────────────────────────────
+// 🔢  OTP STORES
+// ─────────────────────────────────────────────────────────
+const otpStore         = {};   // keyed by user email — payment OTPs
+const loanOtpStore     = {};   // keyed by user email — loan OTPs
+const verifiedOtpStore = {};   // keyed by user email — OTPs that passed verification
 function generateOTP() { return String(Math.floor(100000 + Math.random() * 900000)); }
 
 // ─────────────────────────────────────────────────────────
@@ -274,74 +278,99 @@ router.post("/verify-otp", auth, async (req, res) => {
     const sender = await User.findById(req.user.id);
     if (!sender) return res.status(404).json({ message: "User not found ❌" });
 
-    let { receiver, amount, otp, location, note, skipOtp } = req.body;
+    // ✅ Destructure ALL fields including dryRun — must come first
+    let { receiver, amount, otp, location, note, skipOtp, dryRun } = req.body;
     amount   = Number(amount);
     location = (location || "unknown").trim();
+
+    // ── DRY RUN: validate OTP only, no money moves ──────────
+    if (dryRun) {
+      if (!skipOtp) {
+        const stored = otpStore[sender.email];
+        if (!stored)
+          return res.status(400).json({ message: "OTP expired or not requested ❌" });
+        if (stored.otp !== String(otp).trim())
+          return res.status(400).json({ message: "Incorrect OTP ❌" });
+        if (Date.now() > stored.expires) {
+          delete otpStore[sender.email];
+          return res.status(400).json({ message: "OTP expired ❌" });
+        }
+        verifiedOtpStore[sender.email] = { expires: Date.now() + 5 * 60 * 1000 };
+        delete otpStore[sender.email];
+      }
+      return res.json({ message: "OTP verified ✅", otpValidated: true });
+    }
+    // ── END DRY RUN ──────────────────────────────────────────
 
     if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount ❌" });
     if (!receiver)              return res.status(400).json({ message: "Receiver email required ❌" });
     if (sender.email === receiver.trim().toLowerCase())
       return res.status(400).json({ message: "Cannot send money to yourself ❌" });
 
-    // ── Server-side fee recalculation (never trust client) ──
     const platformFee   = calcPlatformFee(amount);
     const totalDeducted = amount + platformFee;
 
-    // ── OTP check ──────────────────────────────────────────
+    // ── OTP check ────────────────────────────────────────────
     if (!skipOtp) {
-      const stored = otpStore[sender.email];
-      if (!stored)
-        return res.status(400).json({ message: "OTP expired or not requested. Please request a new one ❌" });
-      if (stored.otp !== String(otp).trim())
-        return res.status(400).json({ message: "Incorrect OTP ❌" });
-      if (Date.now() > stored.expires) {
+      const preVerified = verifiedOtpStore[sender.email];
+      if (preVerified) {
+        if (Date.now() > preVerified.expires) {
+          delete verifiedOtpStore[sender.email];
+          return res.status(400).json({ message: "OTP session expired. Please verify your OTP again ❌" });
+        }
+        delete verifiedOtpStore[sender.email]; // consume — one use only
+      } else {
+        const stored = otpStore[sender.email];
+        if (!stored)
+          return res.status(400).json({ message: "OTP expired or not requested ❌" });
+        if (stored.otp !== String(otp).trim())
+          return res.status(400).json({ message: "Incorrect OTP ❌" });
+        if (Date.now() > stored.expires) {
+          delete otpStore[sender.email];
+          return res.status(400).json({ message: "OTP expired ❌" });
+        }
         delete otpStore[sender.email];
-        return res.status(400).json({ message: "OTP expired ❌" });
       }
-      delete otpStore[sender.email];
     }
 
-    // ── Balance check ──────────────────────────────────────
+    // ── Balance check ────────────────────────────────────────
     if (sender.balance < totalDeducted)
       return res.status(400).json({
         message: `Insufficient balance. Need ₹${totalDeducted.toLocaleString("en-IN")} (amount + ₹${platformFee} fee), you have ₹${sender.balance.toLocaleString("en-IN")} ❌`
       });
 
-    // ── Daily limit check (₹1,00,000 on transfer amount, not fee) ──
+    // ── Daily limit check ────────────────────────────────────
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-
     const todayTxns  = await Transaction.find({ sender: sender.email, createdAt: { $gte: todayStart } });
     const todayTotal = todayTxns.reduce((s, t) => s + t.amount, 0);
-
-    // ✅ FIX: block the transaction BEFORE processing if limit is already hit
     if (todayTotal + amount > 100000) {
       return res.status(400).json({
         message: `Daily limit exceeded ❌ Used: ₹${todayTotal.toLocaleString("en-IN")} / ₹1,00,000. Remaining today: ₹${Math.max(0, 100000 - todayTotal).toLocaleString("en-IN")}`
       });
     }
 
-    // ── Fraud detection ────────────────────────────────────
+    // ── Fraud detection ──────────────────────────────────────
     const fraud = await detectFraud(sender.email, amount, location);
 
-    // ── Deduct from sender (amount + fee) ─────────────────
+    // ── Deduct from sender ───────────────────────────────────
     sender.balance     -= totalDeducted;
     sender.rewardPoints = (sender.rewardPoints || 0) + Math.floor(amount / 100);
     await sender.save();
 
-    // ── Credit receiver (transfer amount only, not fee) ───
+    // ── Credit receiver ──────────────────────────────────────
     const receiverUser = await User.findOne({ email: receiver.trim().toLowerCase() });
     if (receiverUser) {
       receiverUser.balance += amount;
       await receiverUser.save();
     }
 
-    // ── Category resolution ────────────────────────────────
+    // ── Category resolution ──────────────────────────────────
     const resolvedCategory = (() => {
       if (!note) return "Transfer";
       const chipMap = {
-        "rent": "Rent", "food": "Food", "medicine": "Medicine",
-        "shopping": "Shopping", "travel": "Travel", "bills": "Bills", "others": "Others"
+        "rent":"Rent","food":"Food","medicine":"Medicine",
+        "shopping":"Shopping","travel":"Travel","bills":"Bills","others":"Others"
       };
       const lower = note.toLowerCase();
       for (const [key, cat] of Object.entries(chipMap)) {
@@ -350,43 +379,36 @@ router.post("/verify-otp", auth, async (req, res) => {
       return categorizeFromNote(note);
     })();
 
-    // ── Save transaction ───────────────────────────────────
-      const txn = await Transaction.create({
-      sender:    sender.email.toLowerCase(), 
+    // ── Save transaction ─────────────────────────────────────
+    const txn = await Transaction.create({
+      sender:    sender.email.toLowerCase(),
       receiver:  receiver.trim().toLowerCase(),
-      amount,
-      platformFee,
-      location,
+      amount, platformFee, location,
       isFraud:   fraud.isFraud,
       riskScore: fraud.riskScore,
       riskLevel: fraud.level,
       status:    "completed",
-      note,
-      category:  resolvedCategory
+      note, category: resolvedCategory
     });
     console.log("✅ Transaction saved:", txn.txnId, txn.sender, "→", txn.receiver, txn.amount);
 
-    await createNotif(
-  sender.email, "sent", "Payment Sent 💸",
-  `₹${amount.toLocaleString("en-IN")} sent to ${receiver}. Fee: ₹${platformFee}. Txn: ${txn.txnId}`,
-  totalDeducted, txn.txnId, "💸"
-);
-if (receiverUser) {
-  await createNotif(
-    receiver, "received", "Money Received 💰",
-    `₹${amount.toLocaleString("en-IN")} received from ${sender.email}. Txn: ${txn.txnId}`,
-    amount, txn.txnId, "💰"
-  );
-}
+    await createNotif(sender.email, "sent", "Payment Sent 💸",
+      `₹${amount.toLocaleString("en-IN")} sent to ${receiver}. Fee: ₹${platformFee}. Txn: ${txn.txnId}`,
+      totalDeducted, txn.txnId, "💸");
+    if (receiverUser) {
+      await createNotif(receiver, "received", "Money Received 💰",
+        `₹${amount.toLocaleString("en-IN")} received from ${sender.email}. Txn: ${txn.txnId}`,
+        amount, txn.txnId, "💰");
+    }
 
-    // ── Notifications ──────────────────────────────────────
+    // ── Send alerts ──────────────────────────────────────────
     const newDailyUsed = todayTotal + amount;
-    const senderMsg = `SecurePay Alert: Rs.${amount.toLocaleString("en-IN")} sent to ${receiver}. Fee: Rs.${platformFee}. Total deducted: Rs.${totalDeducted.toLocaleString("en-IN")}. Txn: ${txn.txnId}. Balance: Rs.${sender.balance.toLocaleString("en-IN")}. Risk: ${fraud.level}. Daily used: Rs.${newDailyUsed.toLocaleString("en-IN")} / Rs.1,00,000. -SecurePay Pro`;
+    const senderMsg = `SecurePay Alert: Rs.${amount.toLocaleString("en-IN")} sent to ${receiver}. Fee: Rs.${platformFee}. Total: Rs.${totalDeducted.toLocaleString("en-IN")}. Txn: ${txn.txnId}. Balance: Rs.${sender.balance.toLocaleString("en-IN")}. Risk: ${fraud.level}. -SecurePay Pro`;
     await sendEmail(sender.email, "SecurePay — Payment Debit Alert", senderMsg);
     if (sender.phone) sendSMS(sender.phone, senderMsg).catch(() => {});
 
     const receiverMsg = `SecurePay Alert: Rs.${amount.toLocaleString("en-IN")} received from ${sender.email}. Txn: ${txn.txnId}. -SecurePay Pro`;
-    sendEmail(receiver, "SecurePay — Payment Credit Alert", receiverMsg).catch(e => console.log("Receiver email failed:", e.message));
+    sendEmail(receiver, "SecurePay — Payment Credit Alert", receiverMsg).catch(() => {});
     if (receiverUser?.phone) sendSMS(receiverUser.phone, receiverMsg).catch(() => {});
 
     res.json({
@@ -405,7 +427,6 @@ if (receiverUser) {
     res.status(500).json({ message: "Server error ❌" });
   }
 });
-
 // ─────────────────────────────────────────────────────────
 // 📋  MY TRANSACTIONS
 // ─────────────────────────────────────────────────────────
