@@ -7,6 +7,12 @@ const User        = require("../models/User");
 const Loan        = require("../models/Loan");
 const nodemailer  = require("nodemailer");
 const twilio      = require("twilio");
+let PendingTxn;
+try {
+  PendingTxn = require("../models/PendingTransaction");
+} catch(e) {
+  console.log("⚠️ PendingTransaction model not found:", e.message);
+}
 
 // ─────────────────────────────────────────────────────────
 // 📧  EMAIL TRANSPORTER
@@ -141,9 +147,8 @@ async function detectFraud(senderEmail, amount, location) {
 
   let level   = "LOW";
   let isFraud = false;
-  if      (riskScore >= 80) { level = "CRITICAL"; isFraud = true; }
-  else if (riskScore >= 60) { level = "HIGH"; }
-  else if (riskScore >= 35) { level = "MEDIUM"; }
+if      (riskScore >= 75) { level = "HIGH"; }    // no more CRITICAL
+else if (riskScore >= 35) { level = "MEDIUM"; }
 
   console.log(`Fraud | Sender:${senderEmail} Amount:${amount} Score:${riskScore} Level:${level}`);
   return { riskScore, level, isFraud };
@@ -226,9 +231,6 @@ router.post("/send-otp", auth, async (req, res) => {
 
     // ── Payment OTP path ───────────────────────────────────
     const fraud = await detectFraud(sender.email, amount, location);
-
-    if (fraud.level === "CRITICAL")
-      return res.status(403).json({ message: "Transaction blocked due to high fraud risk. Contact support.", riskLevel: "CRITICAL" });
 
     // LOW risk → skip OTP, but still validate daily limit here
     if (fraud.level === "LOW") {
@@ -351,8 +353,73 @@ router.post("/verify-otp", auth, async (req, res) => {
     }
 
     // ── Fraud detection ──────────────────────────────────────
-    const fraud = await detectFraud(sender.email, amount, location);
+// ── Fraud detection ──────────────────────────────────────
+const fraud = await detectFraud(sender.email, amount, location);
 
+console.log("🔍 Fraud level:", fraud.level, "Score:", fraud.riskScore, "PendingTxn:", !!PendingTxn);
+
+if (fraud.level === "HIGH") {
+  if (!PendingTxn) {
+    console.log("⚠️ PendingTxn model missing — loading now");
+    PendingTxn = require("../models/PendingTransaction");
+  }
+
+  // 1️⃣ Create the pending approval record (admin review queue)
+  const pending = await PendingTxn.create({
+    sender:     sender.email,
+    receiver:   receiver.trim().toLowerCase(),
+    amount,
+    platformFee,
+    location,
+    note,
+    fraudScore: fraud.riskScore,
+    riskLevel:  fraud.level,
+    status:     "pending"
+  });
+
+  // 2️⃣ Also save a blocked-status Transaction so it appears in Blocked Transactions log
+  await Transaction.create({
+    sender:      sender.email.toLowerCase(),
+    receiver:    receiver.trim().toLowerCase(),
+    amount,
+    platformFee,
+    location,
+    isFraud:     true,
+    riskScore:   fraud.riskScore,
+    riskLevel:   fraud.level,
+    status:      "blocked",
+    note,
+    category:    "Transfer",
+    fraudReason: `Sent for admin review — Fraud score: ${fraud.riskScore}`
+  });
+
+  // 3️⃣ Notify all admins
+  const admins = await User.find({ role: "admin" });
+  for (const admin of admins) {
+    await createNotif(
+      admin.email, "security",
+      "⚠️ High Risk Transaction Pending",
+      `₹${amount.toLocaleString("en-IN")} from ${sender.email} to ${receiver}. Score: ${fraud.riskScore}`,
+      amount, pending._id.toString(), "⚠️"
+    );
+  }
+
+  // 4️⃣ Notify the sender their transaction is under review
+  await createNotif(
+    sender.email, "security",
+    "⏳ Transaction Under Review",
+    `Your ₹${amount.toLocaleString("en-IN")} payment to ${receiver} is pending admin approval. Fraud score: ${fraud.riskScore}`,
+    amount, pending._id.toString(), "⏳"
+  );
+
+  return res.json({
+    requiresApproval: true,
+    pendingId:        pending._id,
+    riskLevel:        fraud.level,
+    fraudScore:       fraud.riskScore,
+    message:          "Transaction sent for admin review ⏳"
+  });
+}
     // ── Deduct from sender ───────────────────────────────────
     sender.balance     -= totalDeducted;
     sender.rewardPoints = (sender.rewardPoints || 0) + Math.floor(amount / 100);
@@ -751,6 +818,126 @@ router.get("/daily-usage", auth, async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ message: "Server error" });
+  }
+});
+// GET /api/payment/pending-txns  (admin sees all pending)
+router.get("/pending-txns", auth, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") return res.status(403).json({ message: "Admins only ❌" });
+    if (!PendingTxn) return res.json({ pending: [] });
+    const pending = await PendingTxn.find({ status: "pending" }).sort({ createdAt: -1 });
+    res.json({ pending });
+  } catch (err) {
+    console.log("GET PENDING-TXNS ERROR:", err);
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+
+// GET /api/payment/pending-txns-user  (sender checks their own)
+router.get("/pending-txns-user", auth, async (req, res) => {
+  try {
+    if (!PendingTxn) return res.json({ pending: [] });
+    const sender = await User.findById(req.user.id);
+    const pending = await PendingTxn.find({ sender: sender.email, status: "pending" }).sort({ createdAt: -1 });
+    res.json({ pending });
+  } catch (err) {
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+
+// POST /api/payment/pending-txns/:id/approve
+router.post("/pending-txns/:id/approve", auth, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") return res.status(403).json({ message: "Admins only ❌" });
+    if (!PendingTxn) return res.status(400).json({ message: "PendingTxn model not loaded ❌" });
+
+    const pending = await PendingTxn.findById(req.params.id);
+    if (!pending) return res.status(404).json({ message: "Pending txn not found ❌" });
+    if (pending.status !== "pending") return res.status(400).json({ message: "Already processed ❌" });
+
+    const sender = await User.findOne({ email: pending.sender });
+    if (!sender) return res.status(404).json({ message: "Sender not found ❌" });
+
+    const totalDeducted = pending.amount + pending.platformFee;
+    if (sender.balance < totalDeducted)
+      return res.status(400).json({ message: `Sender has insufficient balance ❌` });
+
+    sender.balance -= totalDeducted;
+    sender.rewardPoints = (sender.rewardPoints || 0) + Math.floor(pending.amount / 100);
+    await sender.save();
+
+    const receiverUser = await User.findOne({ email: pending.receiver });
+    if (receiverUser) { receiverUser.balance += pending.amount; await receiverUser.save(); }
+
+    const txn = await Transaction.create({
+      sender: pending.sender, receiver: pending.receiver,
+      amount: pending.amount, platformFee: pending.platformFee,
+      location: pending.location, note: pending.note,
+      riskScore: pending.fraudScore, riskLevel: pending.riskLevel,
+      isFraud: false, status: "completed", category: "Transfer"
+    });
+
+    pending.status = "approved";
+    await pending.save();
+
+    await createNotif(pending.sender, "sent", "✅ Transaction Approved",
+      `Your ₹${pending.amount.toLocaleString("en-IN")} payment to ${pending.receiver} was approved. Txn: ${txn.txnId}`,
+      pending.amount, txn.txnId, "✅");
+
+    const msg = `SecurePay: Your payment of Rs.${pending.amount.toLocaleString("en-IN")} to ${pending.receiver} was APPROVED by admin. Txn: ${txn.txnId}. -SecurePay Pro`;
+    sendEmail(pending.sender, "SecurePay — Payment Approved ✅", msg).catch(() => {});
+
+    res.json({ message: "Approved ✅", txnId: txn.txnId, newBalance: sender.balance });
+  } catch (err) {
+    console.log("APPROVE ERROR:", err);
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+
+// POST /api/payment/pending-txns/:id/reject
+router.post("/pending-txns/:id/reject", auth, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") return res.status(403).json({ message: "Admins only ❌" });
+    if (!PendingTxn) return res.status(400).json({ message: "PendingTxn model not loaded ❌" });
+
+    const pending = await PendingTxn.findById(req.params.id);
+    if (!pending) return res.status(404).json({ message: "Not found ❌" });
+
+    const { reason } = req.body;
+    pending.status = "rejected";
+    pending.reason = reason || "Rejected by admin";
+    await pending.save();
+
+    await createNotif(pending.sender, "security", "❌ Transaction Rejected",
+      `Your ₹${pending.amount.toLocaleString("en-IN")} payment to ${pending.receiver} was rejected. Reason: ${pending.reason}`,
+      pending.amount, pending._id.toString(), "❌");
+
+    sendEmail(pending.sender, "SecurePay — Payment Rejected",
+      `Your payment of Rs.${pending.amount.toLocaleString("en-IN")} to ${pending.receiver} was rejected. Reason: ${pending.reason}. -SecurePay Pro`
+    ).catch(() => {});
+
+    res.json({ message: "Rejected ✅" });
+  } catch (err) {
+    console.log("REJECT ERROR:", err);
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+// GET /api/payment/blocked-txns — admin sees all blocked/pending-review txns
+router.get('/blocked-txns', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admins only' });
+    
+    const blocked = await Transaction.find({ status: 'blocked' })
+      .sort({ createdAt: -1 }).limit(100);
+    
+    const pending = PendingTxn 
+      ? await PendingTxn.find({ status: { $in: ['pending', 'approved', 'rejected'] } })
+          .sort({ createdAt: -1 }).limit(100)
+      : [];
+
+    res.json({ blocked, pending });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

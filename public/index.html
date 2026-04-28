@@ -1176,6 +1176,25 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
       </div>
     </div>
   </div>
+  <!-- PENDING APPROVALS -->
+<div class="card" style="margin-bottom:16px;border:2px solid var(--orange)">
+  <div class="card-header" style="padding-bottom:12px">
+    <div class="card-title">⏳ Pending Approvals</div>
+    <span id="pendingCountBadge" style="background:var(--orange-light);color:var(--orange);
+      font-size:11px;font-weight:800;padding:3px 10px;border-radius:100px">0 pending</span>
+  </div>
+<div class="card-body" style="padding-top:0;max-height:320px;overflow-y:auto;scrollbar-width:thin">
+  <table class="m-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Sender</th><th>Receiver</th>
+          <th>Amount</th><th>Risk Score</th><th>Time</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="pendingTxnBody"></tbody>
+    </table>
+  </div>
+</div>
 <!-- BLOCKED TRANSACTIONS -->
 <div class="card" style="margin-bottom:16px">
   <div class="card-header" style="padding-bottom:12px">
@@ -1183,7 +1202,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
     <span id="blockedCountBadge" style="background:var(--red-light);color:var(--red);
       font-size:11px;font-weight:800;padding:3px 10px;border-radius:100px">0 blocked</span>
   </div>
-  <div class="card-body" style="padding-top:0">
+<!-- CORRECT: -->
+<div class="card-body" style="padding-top:0;max-height:260px;overflow-y:auto;scrollbar-width:thin">
     <table class="m-table">
       <thead>
         <tr>
@@ -1793,6 +1813,13 @@ safeStorage.setItem("demo_user_" + email, JSON.stringify({
 
 function doLogout() {
   stopNotifPolling();
+
+  // Clear the pending approval poll so it doesn't fire after logout
+  if (window._pendingPollID) {
+    clearInterval(window._pendingPollID);
+    window._pendingPollID = null;
+  }
+
   appState.notifications = [];
   ["sp_token","sp_email","sp_name","sp_role"].forEach(k => safeStorage.removeItem(k));
   window.location.reload();
@@ -1802,6 +1829,9 @@ function doLogout() {
 // BOOT
 // ═══════════════════════════════════════
 async function bootApp() {
+  // Normalize email immediately — all localStorage keys depend on this
+  appState.email = (appState.email || "").toLowerCase().trim();
+
   showScreen("appScreen");
   document.getElementById("heroBalance").innerHTML =
     '<span class="skeleton" style="display:inline-block;width:180px;height:44px;border-radius:8px;vertical-align:middle"></span>';
@@ -1822,7 +1852,6 @@ async function bootApp() {
     appState.kycStep    = typeof profile.kycStep    === "number" ? profile.kycStep    : appState.kycStep;
     saveState();
   } catch(e) { console.log("Profile fetch failed, using cached values:", e.message); }
-
   const displayName = appState.name || appState.email.split("@")[0] || "User";
   document.getElementById("navAvatar").textContent   = (displayName[0] || "U").toUpperCase();
   document.getElementById("navUserName").textContent = displayName;
@@ -1848,6 +1877,30 @@ async function bootApp() {
     }
   }
   refreshDashboard();
+  renderPendingReviews();
+
+  // Poll for approval status every 15s while app is open
+  if (!window._pendingPollID) {
+    window._pendingPollID = setInterval(async () => {
+      const key     = "sp_pending_reviews_" + appState.email;
+      const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
+      if (!reviews.some(r => r.status === "pending")) return;
+
+      // Check notifications — if we got an approval notif, refresh
+      try {
+        const res  = await fetch(API + "notifications", {
+          headers: { Authorization: "Bearer " + appState.token }
+        });
+        const data = await res.json();
+        const hasApproval = (data.notifications || []).some(n =>
+          n.type === "sent" && n.title?.includes("Approved")
+        );
+        if (hasApproval) {
+          await refreshSenderAfterApproval();
+        }
+      } catch(e) {}
+    }, 15000);
+  }
   loadTransactions();
   loadActiveLoans();
 renderLinkedBanks();
@@ -2163,21 +2216,21 @@ const receiver   = receiverEl.dataset.resolvedEmail || receiverEl.value.trim();
   const facEl = document.getElementById("fraudMeterFactors");
 
   bar.style.width = score + "%";
-  if (score >= 60) {
+if (score >= 75) {
     bar.style.background   = "var(--red)";
     label.style.background = "var(--red-light)";
     label.style.color      = "var(--red)";
-    label.textContent      = "HIGH RISK";
+    label.textContent      = "HIGH — Admin review";
   } else if (score >= 35) {
     bar.style.background   = "var(--orange)";
     label.style.background = "var(--orange-light)";
     label.style.color      = "var(--orange)";
-    label.textContent      = "MEDIUM";
+    label.textContent      = "MEDIUM — OTP required";
   } else {
     bar.style.background   = "var(--green)";
     label.style.background = "var(--green-light)";
     label.style.color      = "var(--green)";
-    label.textContent      = "LOW RISK";
+    label.textContent      = "LOW — PIN only";
   }
 
   facEl.innerHTML = factors.map(f =>
@@ -2448,7 +2501,7 @@ function pickNoteChip(el, label) {
 // FRAUD BLOCK SYSTEM
 // ═══════════════════════════════════════
 function getBlockThreshold() {
-  return 80; // fixed threshold
+  return 101; // only truly CRITICAL gets blocked client-side
 }
 
 function computeFraudScore() {
@@ -2466,12 +2519,6 @@ function computeFraudScore() {
   else if (amount > 20000) { score += 35; factors.push({ label:"High amount",         color:"var(--orange)", icon:"🟠" }); }
   else if (amount > 5000)  { score += 15; factors.push({ label:"Medium amount",       color:"var(--orange)", icon:"🟡" }); }
   else if (amount > 0)     { score +=  5; factors.push({ label:"Low amount",          color:"var(--green)",  icon:"🟢" }); }
-
-  // Round number
- if (amount > 0 && amount % 1000 === 0) {
-  score += 5;  // was 10
-  factors.push({ label:"Exact round number", color:"var(--orange)", icon:"🔢" });
-}
 
   // Velocity — multiple txns in last 10 mins
   const recentTxns = appState.transactions.filter(t => {
@@ -2493,7 +2540,7 @@ function computeFraudScore() {
 
   // New recipient
   const known = appState.transactions.map(t => t.receiver.toLowerCase());
- if (receiver && !known.includes(receiver.toLowerCase())) {
+ if (receiver && !known.includes(receiver.toLowerCase()) && amount > 10000) {
   score += 10;  // was 15
   factors.push({ label:"New recipient", color:"var(--orange)", icon:"👤" });
 }else if (receiver) {
@@ -2502,7 +2549,7 @@ function computeFraudScore() {
 
   // No location
   if (!location) {
-  score += 10;  // was 20
+  score += 5;  // was 20
   factors.push({ label:"No location set", color:"var(--orange)", icon:"📍" });
 }
 
@@ -2586,33 +2633,35 @@ const receiver = (receiverEl.dataset.resolvedEmail || receiverEl.value).trim();
 
   try {
     // ── Check fraud score before hitting server ──
-    const currentScore = computeFraudScore();
-    if (currentScore >= getBlockThreshold()) {
-      showBlockedModal(currentScore, window._lastFraudFactors || []);
-       const blocked = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
+// ── Client-side block ONLY for CRITICAL (score >= 95) ──
+// HIGH risk goes to server for admin approval instead
+const currentScore = computeFraudScore();
+if (currentScore > 100) {
+  showBlockedModal(currentScore, window._lastFraudFactors || []);
+  const blocked = JSON.parse(safeStorage.getItem("sp_blocked_txns") || "[]");
   blocked.unshift({
-    receiver: receiver,
-    amount: amount,
-    score: currentScore,
+    receiver, amount, score: currentScore,
     timestamp: new Date().toISOString(),
     factors: (window._lastFraudFactors || []).map(f => f.label)
   });
-  safeStorage.setItem("sp_blocked_txns", JSON.stringify(blocked.slice(0, 20)));
-      btn.innerHTML = 'Send Money →';
-      btn.disabled  = false;
-      return;
-    }
+safeStorage.setItem("sp_blocked_txns", JSON.stringify(blocked.slice(0, 20)));
+renderBlockedLog();
+btn.innerHTML = 'Send Money →';
+  btn.disabled  = false;
+  return;
+}
 
     const data = await api('POST', 'payment/send-otp', { amount, location });
 
     // Store pending payment details for later
     pendingPayment = { receiver, amount, location, note, riskLevel: data.riskLevel };
 
-    if (data.skipOtp) {
-      // LOW risk — no OTP needed, go straight to PIN
-      pendingPayment.otpData = { alreadyCompleted: false, skipOtp: true };
-      openPaymentPIN();
-} else {
+if (data.skipOtp) {
+  pendingPayment.validatedOtp = null;   // explicitly null = skip OTP on server too
+  pendingPayment.skipOtp = true;
+  openPaymentPIN();
+}
+    else {
   document.getElementById('otpSubText').textContent =
     `⚠️ ${data.riskLevel} risk — OTP sent to ${appState.email}`;
   openOTPModal();                                     // ← FIRST
@@ -2644,10 +2693,10 @@ function showRiskBanner(level) {
   banner.className = "risk-banner";
   if (level === "medium") {
     banner.classList.add("show","medium");
-    banner.textContent = "⚠️ Medium risk detected — OTP verification required";
+   banner.textContent = "⚠️ Medium risk — OTP + PIN required"; 
   } else if (level === "high") {
     banner.classList.add("show","high");
-    banner.textContent = "🚨 High risk detected — OTP verification required for your safety";
+    banner.textContent = "🚨 High risk — OTP + PIN + admin approval required";
   } else {
     banner.classList.remove("show");
   }
@@ -2722,8 +2771,8 @@ async function verifyOTP() {
       dryRun: true      // ← key change
     });
 
-    pendingPayment.validatedOtp = otp;
-    pendingPayment.otpData = { alreadyCompleted: false }; // never mark complete here
+pendingPayment.validatedOtp = otp;
+pendingPayment.skipOtp = false;
 
     clearInterval(otpTimerID);
     closeModal("otpModal");
@@ -2887,14 +2936,16 @@ function openPaymentPIN() {
   payPinBuffer = "";
   updatePayPinDots();
   document.getElementById("payPinErr").textContent = "";
-  const hasPIN = !!safeStorage.getItem(getPINKey());
-  payPinMode = hasPIN ? "verify" : "set";
-  document.getElementById("pinModalSub").textContent = hasPIN
+  
+  // Always check fresh from storage — never trust cached mode
+  const stored = safeStorage.getItem(getPINKey());
+  payPinMode = stored ? "verify" : "set";
+  
+  document.getElementById("pinModalSub").textContent = stored
     ? "Enter your 4-digit payment PIN to confirm"
     : "🆕 First time? Create a 4-digit payment PIN";
   openModal("paymentPinModal");
 }
-
 function payPinKey(val) {
   document.getElementById("payPinErr").textContent = "";
   if (val === "backspace") { payPinBuffer = payPinBuffer.slice(0,-1); updatePayPinDots(); return; }
@@ -2913,23 +2964,28 @@ function updatePayPinDots() {
 
 function checkPaymentPIN() {
   const stored = safeStorage.getItem(getPINKey());
-  if (payPinMode === "set") {
+  
+  if (!stored) {
+    // No PIN exists yet — save what user just entered as their new PIN
     safeStorage.setItem(getPINKey(), payPinBuffer);
     toast("Payment PIN created! 🔐", "success");
     closeModal("paymentPinModal");
     finalizePayment();
+  } else if (payPinBuffer === stored) {
+    // PIN matches — proceed
+    closeModal("paymentPinModal");
+    finalizePayment();
   } else {
-    if (stored === payPinBuffer) {
-      closeModal("paymentPinModal");
-      finalizePayment();
-    } else {
-      document.getElementById("payPinErr").textContent = "Wrong PIN. Try again.";
-      document.querySelectorAll("#payPinDots .pin-dot").forEach(d => {
-        d.classList.remove("shake"); void d.offsetWidth; d.classList.add("shake");
-      });
-      payPinBuffer = "";
-      setTimeout(updatePayPinDots, 400);
-    }
+    // Wrong PIN — shake and reset
+    document.getElementById("payPinErr").textContent = "Wrong PIN. Try again.";
+    document.querySelectorAll("#payPinDots .pin-dot").forEach(d => {
+      d.classList.remove("shake");
+      void d.offsetWidth;
+      d.classList.add("shake");
+    });
+    payPinBuffer = "";
+    setTimeout(updatePayPinDots, 400);
+    // Do NOT call finalizePayment here
   }
 }
 
@@ -2940,21 +2996,46 @@ function cancelPaymentPIN() {
 }
 
 async function finalizePayment() {
-  const { receiver, amount, location, validatedOtp } = pendingPayment;
+  const { receiver, amount, location, validatedOtp, skipOtp } = pendingPayment;
   const fee  = calcPlatformFee(amount);
   const note = document.getElementById('sendNote').value.trim();
+  
   try {
-    // ✅ Money moves HERE — after PIN confirmed
     const data = await api('POST', 'payment/verify-otp', {
       receiver,
       amount,
       platformFee: fee,
       location,
       note,
-      otp: validatedOtp || "",
-      skipOtp: !validatedOtp,  // true only for LOW risk (no OTP was needed)
-      dryRun: false            // ← explicit, this is the real transfer
+      otp: "",           // always empty — dryRun already validated it
+      skipOtp: !!skipOtp, // true only for LOW risk
+      dryRun: false
     });
+
+if (data.requiresApproval) {
+  pendingPayment = null;
+
+  // Use normalized email as key
+  const currentEmail = (appState.email || "").toLowerCase().trim();
+  const key     = "sp_pending_reviews_" + currentEmail;
+  const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
+  reviews.unshift({
+    id:        data.pendingId,
+    receiver:  receiver,
+    amount:    amount,
+    riskLevel: data.riskLevel,
+    score:     data.fraudScore,
+    time:      new Date().toISOString(),
+    status:    "pending"
+  });
+  safeStorage.setItem(key, JSON.stringify(reviews.slice(0, 10)));
+
+  toast("⏳ Transaction sent for admin review! You'll be notified once approved.", "info");
+  gotoTab("dashboard");
+  renderPendingReviews();
+  return;
+}
+
     await onPaymentSuccess(data, amount, receiver);
   } catch(err) {
     toast(err.message, 'error');
@@ -3814,14 +3895,14 @@ async function refreshAdmin() {
     renderAdminCats(allAdminTxns);
     renderAdminPlatStats(allAdminTxns, data);
     renderBlockedLog();
-
-  } catch (err) {
+    if (appState.role === "admin") loadPendingTxns();
+} catch (err) {
     if (msgEl) msgEl.innerHTML = "";
-    // Demo mode: build from local transactions
     renderAdminTable([]);
     renderBlockedLog();
+    if (appState.role === "admin") loadPendingTxns(); // ✅ add this
     toast("Admin: using demo data (no backend)", "info");
-  }
+}
 }
 
 // Smooth number counter animation
@@ -3966,60 +4047,80 @@ function renderBlockedLog() {
   const tbody   = document.getElementById("blockedLogBody");
   const badge   = document.getElementById("blockedCountBadge");
 
-  if (badge) badge.textContent = blocked.length + " blocked";
+  // Also fetch from backend
+  fetch(API + "payment/blocked-txns", {
+    headers: { Authorization: "Bearer " + appState.token }
+  })
+  .then(r => r.ok ? r.json() : { blocked: [], pending: [] })
+  .then(data => {
+    const serverBlocked = (data.blocked || []).map(b => ({
+      receiver: b.receiver, amount: b.amount,
+      score: b.riskScore, timestamp: b.createdAt,
+      factors: [b.fraudReason || "Server flagged"], _status: "blocked"
+    }));
 
-  if (!tbody) return;
+    const serverPending = (data.pending || []).map(p => ({
+      receiver: p.receiver, amount: p.amount,
+      score: p.fraudScore, timestamp: p.createdAt,
+      factors: [`Risk: ${p.riskLevel}`, p.reason || ""].filter(Boolean),
+      _status: p.status  // "pending" | "approved" | "rejected"
+    }));
 
-  if (!blocked.length) {
-    tbody.innerHTML = `<tr>
-      <td colspan="6" style="text-align:center;color:var(--text2);padding:28px">
-        ✅ No blocked transactions yet — try sending ₹60,000 to test it
-      </td>
-    </tr>`;
-    return;
-  }
+    // Merge: localStorage blocked + server blocked + server pending/approved/rejected
+    const all = [
+      ...blocked.map(b => ({ ...b, _status: "blocked" })),
+      ...serverBlocked,
+      ...serverPending,
+    ];
 
-  tbody.innerHTML = blocked.map((b, i) => {
-    const scoreColor = b.score >= 90 ? "var(--red)"
-                     : b.score >= 75 ? "var(--orange)"
-                     : "var(--text2)";
-    const scoreBg    = b.score >= 90 ? "var(--red-light)"
-                     : b.score >= 75 ? "var(--orange-light)"
-                     : "var(--surface2)";
+    if (badge) badge.textContent = all.length + " records";
 
-    const signals = (b.factors || []).map(f =>
-      `<span style="display:inline-flex;font-size:10px;font-weight:700;
-        padding:2px 8px;border-radius:100px;
-        background:var(--red-light);color:var(--red);
-        border:1px solid rgba(239,35,60,.15);
-        margin:2px;white-space:nowrap">${f}</span>`
-    ).join("");
+    if (!tbody) return;
+    if (!all.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:28px">No blocked or reviewed transactions yet</td></tr>`;
+      return;
+    }
 
-    const timeStr = b.timestamp
-      ? new Date(b.timestamp).toLocaleString("en-IN", {
-          day:"numeric", month:"short",
-          hour:"2-digit", minute:"2-digit"
-        })
-      : "—";
+    tbody.innerHTML = all.map((b, i) => {
+      const status = b._status || "blocked";
+      const statusConfig = {
+        blocked:  { label: "🚫 Blocked",  bg: "var(--red-light)",    color: "var(--red)"    },
+        pending:  { label: "⏳ Pending",  bg: "var(--orange-light)", color: "var(--orange)" },
+        approved: { label: "✅ Approved", bg: "var(--green-light)",  color: "var(--green)"  },
+        rejected: { label: "❌ Rejected", bg: "var(--red-light)",    color: "var(--red)"    },
+      }[status] || { label: status, bg: "var(--surface2)", color: "var(--text2)" };
 
-    return `<tr>
-      <td style="color:var(--text3);font-size:11px;font-weight:700">#${i + 1}</td>
-      <td style="font-size:13px;font-weight:600;
-        font-family:'JetBrains Mono',monospace">${b.receiver || "—"}</td>
-      <td style="font-weight:800;color:var(--red)">₹${fmt(b.amount || 0)}</td>
-      <td>
-        <span style="display:inline-flex;align-items:center;justify-content:center;
-          min-width:48px;height:28px;border-radius:8px;
-          font-size:12px;font-weight:800;
-          font-family:'JetBrains Mono',monospace;
-          background:${scoreBg};color:${scoreColor}">
-          ${b.score}
-        </span>
-      </td>
-      <td style="max-width:200px">${signals || "—"}</td>
-      <td style="font-size:11px;color:var(--text2)">${timeStr}</td>
-    </tr>`;
-  }).join("");
+      const scoreColor = (b.score||0) >= 90 ? "var(--red)" : (b.score||0) >= 75 ? "var(--orange)" : "var(--text2)";
+      const scoreBg    = (b.score||0) >= 90 ? "var(--red-light)" : (b.score||0) >= 75 ? "var(--orange-light)" : "var(--surface2)";
+      const signals    = (b.factors || []).map(f =>
+        `<span style="display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;
+          background:var(--red-light);color:var(--red);border:1px solid rgba(239,35,60,.15);margin:2px">${f}</span>`
+      ).join("");
+      const timeStr = b.timestamp ? new Date(b.timestamp).toLocaleString("en-IN", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" }) : "—";
+
+      return `<tr>
+        <td style="color:var(--text3);font-size:11px;font-weight:700">#${i+1}</td>
+        <td style="font-weight:600;font-size:12px;font-family:'JetBrains Mono',monospace;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.receiver||"—"}</td>
+        <td style="font-weight:800;color:var(--red)">₹${fmt(b.amount||0)}</td>
+        <td>
+          <span style="display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:26px;border-radius:8px;
+            font-size:11px;font-weight:800;font-family:'JetBrains Mono',monospace;background:${scoreBg};color:${scoreColor}">
+            ${b.score||"—"}
+          </span>
+        </td>
+        <td style="max-width:220px">${signals||"—"}</td>
+        <td style="white-space:nowrap">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:3px">${timeStr}</div>
+          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;
+            background:${statusConfig.bg};color:${statusConfig.color}">${statusConfig.label}</span>
+        </td>
+      </tr>`;
+    }).join("");
+  })
+  .catch(() => {
+    if (badge) badge.textContent = blocked.length + " records";
+    // fallback: render localStorage only (existing behavior)
+  });
 }
 function renderAdminCats(txns) {
   const el = document.getElementById("adminCatBreakdown");
@@ -4508,7 +4609,232 @@ function unlockApp() {
 function forgotPIN() {
   if (confirm("This will sign you out. Continue?")) { doLogout(); }
 }
+async function loadPendingTxns() {
+  try {
+    const data = await api("GET", "payment/pending-txns");
+    const pending = data.pending || [];
+    const badge = document.getElementById("pendingCountBadge");
+    if (badge) badge.textContent = pending.length + " pending";
 
+    const tbody = document.getElementById("pendingTxnBody");
+    if (!tbody) return;
+
+    if (!pending.length) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text2);padding:24px">✅ No pending approvals</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = pending.map((p, i) => `
+      <tr>
+        <td style="color:var(--text3);font-size:11px">#${i+1}</td>
+        <td style="font-size:12px;font-family:'JetBrains Mono',monospace">${p.sender}</td>
+        <td style="font-size:12px;font-family:'JetBrains Mono',monospace">${p.receiver}</td>
+        <td style="font-weight:800;color:var(--orange)">₹${fmt(p.amount)}</td>
+        <td>
+          <span style="background:var(--red-light);color:var(--red);
+            padding:3px 10px;border-radius:100px;font-size:11px;font-weight:800">
+            ${p.fraudScore} — ${p.riskLevel}
+          </span>
+        </td>
+        <td style="font-size:11px;color:var(--text2)">${fmtDate(p.createdAt)}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-tonal-green btn-sm" 
+              onclick="adminApprove('${p._id}')">✅ Approve</button>
+            <button class="btn btn-danger btn-sm" 
+              onclick="adminReject('${p._id}')">❌ Reject</button>
+          </div>
+        </td>
+      </tr>`).join("");
+  } catch(e) {
+    console.log("loadPendingTxns error:", e);
+  }
+}
+
+async function adminApprove(id) {
+  if (!confirm("Approve this transaction? Money will be transferred immediately.")) return;
+  try {
+    const data = await api("POST", `payment/pending-txns/${id}/approve`);
+    toast("✅ Transaction approved and sent! Txn: " + data.txnId, "success");
+ 
+    // Refresh admin panel tables
+    await loadPendingTxns();
+    await refreshAdmin();
+ 
+    // If admin is also the sender (same account — edge case in demo),
+    // also refresh their own balance
+    await refreshSenderAfterApproval();
+  } catch(err) {
+    toast(err.message, "error");
+  }
+}
+
+async function refreshSenderAfterApproval() {
+  try {
+    // Always fetch fresh balance from server for the current user
+    const bal = await api("GET", "payment/balance");
+    appState.balance    = bal.balance;
+    appState.rewardPts  = bal.rewardPoints ?? appState.rewardPts;
+    appState.trustScore = bal.trustScore   ?? appState.trustScore;
+    saveState();
+    refreshDashboard();
+ 
+    // Reload transactions so approved txn appears in history
+    await loadTransactions();
+ 
+    // Mark pending reviews as approved in localStorage for THIS user
+    const currentEmail = (appState.email || "").toLowerCase().trim();
+    const key     = "sp_pending_reviews_" + currentEmail;
+    const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
+ 
+    // Check if any are still pending on the server
+    let serverPendingIds = new Set();
+    try {
+      const data = await api("GET", "payment/pending-txns-user");
+      (data.pending || []).forEach(p => serverPendingIds.add(p._id.toString()));
+    } catch(e) {
+      // Endpoint may not exist yet — fall back to marking all as approved
+      serverPendingIds = null;
+    }
+ 
+const updated = reviews.map(r => {
+  if (r.status !== "pending") return r;
+  if (serverPendingIds !== null) {
+    return serverPendingIds.has(r.id) ? r : { ...r, status: "approved" };
+  }
+  return { ...r, status: "approved" };
+});
+
+safeStorage.setItem(key, JSON.stringify(updated));
+
+// Show approved state immediately, then fade out after 5s
+renderPendingReviews();
+toast("✅ Your transaction was approved! Balance updated.", "success");
+ 
+    // Auto-remove the card after 4 seconds once all are resolved
+    const hasUnresolved = updated.some(r => r.status === "pending");
+    if (!hasUnresolved) {
+      setTimeout(() => {
+        safeStorage.setItem(key, JSON.stringify([]));
+        renderPendingReviews();
+      }, 4000);
+    }
+  } catch(e) {
+    console.log("refreshSenderAfterApproval error:", e);
+  }
+}
+
+async function adminReject(id) {
+  const reason = prompt("Reason for rejection (shown to user):", "Suspicious activity detected");
+  if (reason === null) return;
+  try {
+    await api("POST", `payment/pending-txns/${id}/reject`, { reason });
+    toast("❌ Transaction rejected", "info");
+    loadPendingTxns();
+    refreshAdmin();
+  } catch(err) {
+    toast(err.message, "error");
+  }
+}
+function renderPendingReviews() {
+  const currentEmail = (appState.email || "").toLowerCase().trim();
+  if (!currentEmail) return;
+
+  const key     = "sp_pending_reviews_" + currentEmail;
+  const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
+
+  const existing = document.getElementById("pendingReviewsCard");
+  if (existing) existing.remove();
+
+  if (!reviews.length) return;
+
+  // Auto-clear fully resolved reviews after 6 seconds
+  const allResolved = reviews.every(r => r.status !== "pending");
+  if (allResolved) {
+    setTimeout(() => {
+      safeStorage.setItem(key, JSON.stringify([]));
+      const card = document.getElementById("pendingReviewsCard");
+      if (card) {
+        card.style.transition = "opacity 0.5s ease, transform 0.5s ease";
+        card.style.opacity = "0";
+        card.style.transform = "translateY(-10px)";
+        setTimeout(() => card.remove(), 500);
+      }
+    }, 5000);
+  }
+
+  const card = document.createElement("div");
+  card.id = "pendingReviewsCard";
+  card.style.cssText = "margin-bottom:16px;transition:opacity 0.3s ease";
+  card.innerHTML = `
+    <div style="background:var(--surface);border:2px solid var(--orange);border-radius:var(--radius);
+      box-shadow:var(--card-shadow);overflow:hidden">
+      <div style="padding:16px 20px 0;display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--orange-light);
+            display:flex;align-items:center;justify-content:center;font-size:18px">⏳</div>
+          <div>
+            <div style="font-size:15px;font-weight:800;color:var(--orange)">Transactions Under Review</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">
+              ${allResolved ? "✅ All transactions have been reviewed!" : "Awaiting admin approval — no money deducted yet"}
+            </div>
+          </div>
+        </div>
+        <span style="background:${allResolved ? "var(--green-light)" : "var(--orange-light)"};
+          color:${allResolved ? "var(--green)" : "var(--orange)"};font-size:11px;
+          font-weight:800;padding:4px 12px;border-radius:100px">
+          ${reviews.filter(r => r.status === "pending").length} pending
+        </span>
+      </div>
+      <div style="padding:12px 20px 16px">
+        ${reviews.map(r => {
+          const isApproved = r.status === "approved";
+          const isRejected = r.status === "rejected";
+          const isPending  = r.status === "pending";
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;
+            padding:12px 14px;
+            background:${isApproved ? "var(--green-light)" : isRejected ? "var(--red-light)" : "var(--surface2)"};
+            border-radius:12px;margin-bottom:8px;
+            border:1px solid ${isApproved ? "rgba(6,214,160,.2)" : isRejected ? "rgba(239,35,60,.2)" : "var(--border)"};
+            transition:all 0.4s ease">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:40px;height:40px;border-radius:50%;
+                background:${isApproved ? "linear-gradient(135deg,var(--green),#04a07a)" : isRejected ? "linear-gradient(135deg,var(--red),#d01229)" : "linear-gradient(135deg,var(--orange),#e07700)"};
+                display:flex;align-items:center;justify-content:center;
+                font-size:18px;color:white;flex-shrink:0">
+                ${isApproved ? "✅" : isRejected ? "❌" : "⏳"}
+              </div>
+              <div>
+                <div style="font-size:13px;font-weight:700">${r.receiver}</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">
+                  ${fmtDate(r.time)} · Risk Score: <strong style="color:var(--red)">${r.score}</strong>
+                  ${isApproved ? " · <strong style='color:var(--green)'>Money sent!</strong>" : ""}
+                  ${isRejected ? " · <strong style='color:var(--red)'>No money deducted</strong>" : ""}
+                </div>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:16px;font-weight:800;color:${isApproved ? "var(--green)" : isRejected ? "var(--red)" : "var(--orange)"}">
+                ₹${fmt(r.amount)}
+              </div>
+              <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;
+                background:${isPending ? "var(--orange-light)" : isApproved ? "var(--green-light)" : "var(--red-light)"};
+                color:${isPending ? "var(--orange)" : isApproved ? "var(--green)" : "var(--red)"}">
+                ${isPending ? "⏳ Pending" : isApproved ? "✅ Approved" : "❌ Rejected"}
+              </span>
+            </div>
+          </div>`;
+        }).join("")}
+        ${!allResolved ? `<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:4px;font-weight:600">
+          You'll receive an email + notification once the admin reviews your transaction
+        </div>` : ""}
+      </div>
+    </div>`;
+
+  const dashPanel = document.getElementById("tab-dashboard");
+  if (dashPanel) dashPanel.insertBefore(card, dashPanel.firstChild);
+}
 </script>
 </body>
 </html>

@@ -10,6 +10,7 @@ const schema = new mongoose.Schema({
   riskScore: { type: Number, default: 0 },
   riskLevel: { type: String, enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"], default: "LOW" },
   status:   { type: String, enum: ["pending", "completed", "blocked"], default: "completed" },
+  fraudReason: { type: String, default: "" },   // ← ADD THIS
   note:     { type: String, default: "" },
   category: {
     type: String,
@@ -19,7 +20,6 @@ const schema = new mongoose.Schema({
   txnId: { type: String, unique: true, sparse: true },
 }, { timestamps: true });
 
-// NO next parameter — works on Mongoose 9
 schema.pre("validate", function () {
   if (!this.txnId) {
     this.txnId = "SP" + Date.now().toString().slice(-8).toUpperCase() 
