@@ -9,6 +9,12 @@ const auth       = require("../middleware/auth");
 const SECRET = process.env.JWT_SECRET;
 
 // ─────────────────────────────────────────────────────────
+// 🔢  IN-MEMORY OTP STORE  { email: { otp, expires } }
+//     (use Redis in production for multi-instance deploys)
+// ─────────────────────────────────────────────────────────
+const resetOtpStore = {};
+
+// ─────────────────────────────────────────────────────────
 // 📧  EMAIL TRANSPORTER
 // ─────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -55,6 +61,13 @@ async function sendSMS(phone, message) {
 }
 
 // ─────────────────────────────────────────────────────────
+// 🔢  OTP GENERATOR
+// ─────────────────────────────────────────────────────────
+function generateOTP() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+// ─────────────────────────────────────────────────────────
 // 📝  REGISTER
 // ─────────────────────────────────────────────────────────
 router.post("/register", async (req, res) => {
@@ -74,7 +87,13 @@ router.post("/register", async (req, res) => {
     let role = "user";
     if (email === "rohanstanley@gmail.com") role = "admin";
 
-    await User.create({ name, email, password, phone, role });
+    const user = await User.create({ name, email, password, phone, role });
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role },
+      SECRET,
+      { expiresIn: "7d" }
+    );
 
     const welcomeHtml = `
 <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;background:#f9fafb;border-radius:12px;overflow:hidden">
@@ -105,7 +124,17 @@ router.post("/register", async (req, res) => {
     sendEmail(email, "🎉 Welcome to SecurePay Pro — Your Account is Live!", welcomeText, welcomeHtml).catch(console.log);
     sendSMS(phone, `Hi ${name}! Welcome to SecurePay Pro. Your account is LIVE. Balance: Rs.1,24,850. Complete KYC for 500 bonus pts! -SecurePay Pro`).catch(console.log);
 
-    res.json({ message: "Registered successfully ✅" });
+    res.json({
+      token,
+      message:      "Registered successfully ✅",
+      role:         user.role,
+      email:        user.email,
+      name:         user.name,
+      balance:      user.balance,
+      rewardPoints: user.rewardPoints,
+      trustScore:   user.trustScore,
+      kycStep:      user.kycStep,
+    });
 
   } catch (err) {
     console.log("REGISTER ERROR:", err);
@@ -179,7 +208,7 @@ router.get("/profile", auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// ✏️  UPDATE PROFILE  (single definition — no duplicate)
+// ✏️  UPDATE PROFILE
 // ─────────────────────────────────────────────────────────
 router.put("/profile", auth, async (req, res) => {
   try {
@@ -202,8 +231,6 @@ router.put("/profile", auth, async (req, res) => {
     ).select("-password");
 
     if (!user) return res.status(404).json({ message: "User not found ❌" });
-
-    console.log("✅ Profile updated for:", user.email, { phone: user.phone, dateOfBirth: user.dateOfBirth, address: user.address });
 
     res.json({
       message:     "Profile updated ✅",
@@ -251,6 +278,7 @@ router.post("/kyc-step", auth, async (req, res) => {
     res.status(500).json({ message: "Server error ❌" });
   }
 });
+
 // ─────────────────────────────────────────────────────────
 // 🔍  RESOLVE UPI HANDLE → EMAIL
 // ─────────────────────────────────────────────────────────
@@ -259,18 +287,301 @@ router.get("/resolve-upi", auth, async (req, res) => {
     const { handle } = req.query;
     if (!handle) return res.status(400).json({ message: "Handle required" });
 
-    // UPI handle is the part before @ in their email
-    // e.g. handle = "john" → find user whose email starts with "john@"
     const users = await User.find({}).select("email name");
     const match = users.find(u =>
       u.email.split("@")[0].toLowerCase() === handle.toLowerCase().trim()
     );
 
     if (!match) return res.status(404).json({ message: "User not found" });
-
     res.json({ email: match.email, name: match.name });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// ═════════════════════════════════════════════════════════
+// 🔑  FORGOT PASSWORD — STEP 1: Send OTP to email
+//     POST /api/auth/forgot-password
+//     Body: { email }
+// ═════════════════════════════════════════════════════════
+router.post("/forgot-password", async (req, res) => {
+  try {
+    let { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required ❌" });
+    email = email.trim().toLowerCase();
+
+    // Check if user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      // Security: don't reveal whether email exists
+      // But for UX we return a clear message since this is not a banking-grade production app
+      return res.status(404).json({ message: "No account found with this email ❌" });
+    }
+
+    // Generate 6-digit OTP
+    const otp = generateOTP();
+
+    // Store with 10-minute expiry
+    resetOtpStore[email] = {
+      otp,
+      expires:  Date.now() + 10 * 60 * 1000,  // 10 minutes
+      name:     user.name,
+      verified: false
+    };
+
+    console.log(`🔑 Password reset OTP for ${email}: ${otp}`);
+
+    // ── Professional HTML email ─────────────────────────
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f0f4ff;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4ff;padding:40px 20px">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(67,97,238,0.12)">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#4361ee,#7209b7);padding:36px;text-align:center">
+            <div style="font-size:48px;margin-bottom:10px">🔐</div>
+            <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px">
+              Password Reset OTP
+            </h1>
+            <p style="color:rgba(255,255,255,0.7);margin:8px 0 0;font-size:14px">
+              SecurePay Pro — Account Recovery
+            </p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:36px 40px">
+            <p style="font-size:16px;color:#0d1b2a;margin:0 0 8px">
+              Hi <strong>${user.name}</strong> 👋
+            </p>
+            <p style="font-size:14px;color:#566573;line-height:1.7;margin:0 0 28px">
+              We received a request to reset your SecurePay Pro password.
+              Use the OTP below to verify your identity:
+            </p>
+
+            <!-- OTP Box -->
+            <div style="background:linear-gradient(135deg,#eef1ff,#f3e8ff);border:2px solid #4361ee;border-radius:14px;padding:28px;text-align:center;margin:0 0 28px">
+              <p style="font-size:12px;color:#566573;margin:0 0 10px;text-transform:uppercase;letter-spacing:2px;font-weight:700">
+                Your One-Time Password
+              </p>
+              <div style="font-family:'Courier New',monospace;font-size:42px;font-weight:900;letter-spacing:12px;color:#4361ee;line-height:1">
+                ${otp}
+              </div>
+              <p style="font-size:12px;color:#a0aab4;margin:12px 0 0;font-weight:600">
+                ⏰ Valid for <strong style="color:#fb8500">10 minutes</strong> only
+              </p>
+            </div>
+
+            <!-- Security Tips -->
+            <div style="background:#fff4e6;border-radius:10px;padding:16px 20px;border-left:4px solid #fb8500;margin:0 0 24px">
+              <p style="font-size:13px;color:#fb8500;font-weight:700;margin:0 0 6px">⚠️ Security Notice</p>
+              <ul style="font-size:13px;color:#566573;margin:0;padding-left:18px;line-height:1.8">
+                <li>Never share this OTP with anyone</li>
+                <li>SecurePay staff will NEVER ask for your OTP</li>
+                <li>If you didn't request this, ignore this email</li>
+              </ul>
+            </div>
+
+            <p style="font-size:13px;color:#a0aab4;margin:0">
+              This OTP will expire at
+              <strong style="color:#566573">
+                ${new Date(Date.now() + 10 * 60 * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} IST
+              </strong>
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f5f7ff;padding:20px 40px;border-top:1px solid #e2e8f7">
+            <p style="font-size:12px;color:#a0aab4;margin:0;text-align:center;line-height:1.7">
+              This is an automated message from <strong style="color:#4361ee">SecurePay Pro</strong>.
+              Please do not reply to this email.<br>
+              © 2025 SecurePay Pro · RBI Compliant · 256-bit AES Encryption
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const text = `SecurePay Pro — Password Reset OTP\n\nHi ${user.name},\n\nYour OTP to reset your password is: ${otp}\n\nThis OTP is valid for 10 minutes.\n\nDO NOT share this with anyone. SecurePay staff will never ask for your OTP.\n\nIf you didn't request this, please ignore this email.\n\n— SecurePay Pro Team`;
+
+    await sendEmail(
+      email,
+      `SecurePay Pro — Your Password Reset OTP: ${otp}`,
+      text,
+      html
+    );
+
+    // Also send SMS if phone exists
+    if (user.phone) {
+      sendSMS(
+        user.phone,
+        `SecurePay OTP: ${otp} — use this to reset your password. Valid 10 min. DO NOT share. -SecurePay Pro`
+      ).catch(() => {});
+    }
+
+    res.json({
+      message: `OTP sent to ${email} ✅`,
+      // Only expose OTP in development for testing
+      ...(process.env.NODE_ENV !== "production" && { devOtp: otp })
+    });
+
+  } catch (err) {
+    console.log("FORGOT-PASSWORD ERROR:", err);
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// ✅  FORGOT PASSWORD — STEP 2: Verify OTP
+//     POST /api/auth/verify-reset-otp
+//     Body: { email, otp }
+// ═════════════════════════════════════════════════════════
+router.post("/verify-reset-otp", async (req, res) => {
+  try {
+    let { email, otp } = req.body;
+    if (!email || !otp)
+      return res.status(400).json({ message: "Email and OTP are required ❌" });
+
+    email = email.trim().toLowerCase();
+    otp   = String(otp).trim();
+
+    const stored = resetOtpStore[email];
+
+    if (!stored)
+      return res.status(400).json({ message: "OTP expired or not requested ❌" });
+
+    if (Date.now() > stored.expires) {
+      delete resetOtpStore[email];
+      return res.status(400).json({ message: "OTP has expired. Please request a new one ❌" });
+    }
+
+    if (stored.otp !== otp)
+      return res.status(400).json({ message: "Incorrect OTP ❌" });
+
+    // Mark as verified — allows reset-password to proceed
+    resetOtpStore[email].verified = true;
+
+    res.json({ message: "OTP verified ✅" });
+
+  } catch (err) {
+    console.log("VERIFY-RESET-OTP ERROR:", err);
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+
+// ═════════════════════════════════════════════════════════
+// 🔐  FORGOT PASSWORD — STEP 3: Set new password
+//     POST /api/auth/reset-password
+//     Body: { email, otp, newPassword }
+// ═════════════════════════════════════════════════════════
+router.post("/reset-password", async (req, res) => {
+  try {
+    let { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword)
+      return res.status(400).json({ message: "All fields required ❌" });
+
+    email = email.trim().toLowerCase();
+    otp   = String(otp).trim();
+
+    const stored = resetOtpStore[email];
+
+    // Validate OTP one final time
+    if (!stored)
+      return res.status(400).json({ message: "OTP expired or not requested ❌" });
+    if (!stored.verified)
+      return res.status(400).json({ message: "OTP not verified yet ❌" });
+    if (Date.now() > stored.expires) {
+      delete resetOtpStore[email];
+      return res.status(400).json({ message: "OTP session expired. Please start again ❌" });
+    }
+    if (stored.otp !== otp)
+      return res.status(400).json({ message: "Invalid OTP ❌" });
+
+    // Password strength check
+    const pwRegex = /^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$/;
+    if (!pwRegex.test(newPassword))
+      return res.status(400).json({
+        message: "Password must be 8+ chars with at least 1 letter, 1 number & 1 symbol ❌"
+      });
+
+    // Update password (pre-save hook in User model will hash it)
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found ❌" });
+
+    user.password = newPassword;
+    await user.save();
+
+    // Consume the OTP — one use only
+    delete resetOtpStore[email];
+
+    console.log(`✅ Password reset successful for: ${email}`);
+
+    // Send confirmation email
+    const confirmHtml = `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f0f4ff;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4ff;padding:40px 20px">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(67,97,238,0.12)">
+        <tr>
+          <td style="background:linear-gradient(135deg,#06d6a0,#04a07a);padding:36px;text-align:center">
+            <div style="font-size:52px;margin-bottom:10px">✅</div>
+            <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:800">Password Reset Successful!</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 40px">
+            <p style="font-size:16px;color:#0d1b2a">Hi <strong>${user.name}</strong>,</p>
+            <p style="font-size:14px;color:#566573;line-height:1.7">
+              Your SecurePay Pro password has been successfully reset on
+              <strong>${new Date().toLocaleString("en-IN")}</strong>.
+            </p>
+            <div style="background:#e0faf4;border-radius:10px;padding:16px 20px;border-left:4px solid #06d6a0;margin:20px 0">
+              <p style="font-size:13px;color:#06d6a0;font-weight:700;margin:0">🔒 Your account is secure</p>
+              <p style="font-size:13px;color:#566573;margin:6px 0 0">If you did not make this change, contact us immediately.</p>
+            </div>
+            <p style="font-size:13px;color:#a0aab4">— SecurePay Pro Security Team</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    sendEmail(
+      email,
+      "SecurePay Pro — Password Reset Successful ✅",
+      `Hi ${user.name}, your SecurePay Pro password was reset successfully on ${new Date().toLocaleString("en-IN")}. If you didn't do this, contact us immediately. -SecurePay Pro`,
+      confirmHtml
+    ).catch(() => {});
+
+    if (user.phone) {
+      sendSMS(
+        user.phone,
+        `SecurePay: Your password was reset successfully. If you didn't do this, contact support immediately. -SecurePay Pro`
+      ).catch(() => {});
+    }
+
+    res.json({ message: "Password reset successful ✅. You can now sign in with your new password." });
+
+  } catch (err) {
+    console.log("RESET-PASSWORD ERROR:", err);
+    res.status(500).json({ message: "Server error ❌" });
+  }
+});
+
 module.exports = router;

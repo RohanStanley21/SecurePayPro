@@ -523,8 +523,8 @@ router.get("/all", auth, async (req, res) => {
     const txns        = await Transaction.find().sort({ createdAt: -1 }).limit(500);
     const userCount   = await User.countDocuments();                                    // ✅ ADD
     const totalAmount = txns.reduce((s, t) => s + t.amount, 0);
-    const fraudCount  = txns.filter(t => t.isFraud).length;
-    const highRisk    = txns.filter(t => ["HIGH","CRITICAL"].includes(t.riskLevel)).length;
+const fraudCount = txns.filter(t => t.isFraud || t.status === 'blocked').length;
+const highRisk   = txns.filter(t => t.riskLevel === 'HIGH').length;
 
     res.json({
       transactions: txns,
