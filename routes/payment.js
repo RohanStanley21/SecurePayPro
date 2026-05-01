@@ -119,11 +119,11 @@ async function detectFraud(senderEmail, amount, location) {
   const txns = await Transaction.find({ sender: senderEmail }).sort({ createdAt: -1 });
   const user  = await User.findOne({ email: senderEmail });
 
-  if      (amount < 1000)  riskScore += 5;
-  else if (amount < 5000)  riskScore += 10;
-  else if (amount < 20000) riskScore += 25;
-  else if (amount < 50000) riskScore += 40;
-  else                     riskScore += 60;
+if      (amount < 1000)  riskScore += 5;
+else if (amount < 5000)  riskScore += 10;
+else if (amount < 20000) riskScore += 25;
+else if (amount < 50000) riskScore += 40;
+else                     riskScore += 80;
 
   if (!location || location.toLowerCase() === "unknown") riskScore += 20;
 
@@ -147,8 +147,8 @@ async function detectFraud(senderEmail, amount, location) {
 
   let level   = "LOW";
   let isFraud = false;
-if      (riskScore >= 75) { level = "HIGH"; }    // no more CRITICAL
-else if (riskScore >= 35) { level = "MEDIUM"; }
+if      (riskScore >= 70) { level = "HIGH"; }
+else if (riskScore >= 30) { level = "MEDIUM"; }
 
   console.log(`Fraud | Sender:${senderEmail} Amount:${amount} Score:${riskScore} Level:${level}`);
   return { riskScore, level, isFraud };
@@ -631,6 +631,9 @@ router.post("/loans/apply", auth, async (req, res) => {
       loanType, principal, interestRate, tenureMonths,
       emiAmount, totalPayable, nextDueDate: nextDue,
     });
+    // Credit loan principal to wallet
+    user.balance += principal;
+    await user.save();
 
     const amtFmt = principal.toLocaleString("en-IN");
     const emiFmt = emiAmount.toLocaleString("en-IN");
@@ -639,7 +642,7 @@ router.post("/loans/apply", auth, async (req, res) => {
     sendEmail(user.email, `Loan Approved — Rs.${amtFmt} ${loanType} | ID: ${loan.loanId}`, approvedText).catch(console.log);
     if (user.phone) sendSMS(user.phone, approvedText).catch(() => {});
 
-    res.json({ message: "Loan approved ✅", loan });
+    res.json({ message: "Loan approved ✅", loan, newBalance: user.balance });
 
   } catch (err) {
     console.log("LOAN APPLY ERROR:", err);

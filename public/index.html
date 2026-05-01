@@ -694,9 +694,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
           <div style="color:rgba(255,255,255,.5);font-size:11px;font-weight:500;margin-top:1px;font-family:'Sora',sans-serif">Secure · Fast · Trusted</div>
         </div>
       </div>
-
       <div style="flex:1;position:relative;z-index:1">
-        <h1 style="color:white;font-size:28px;font-weight:800;letter-spacing:-.8px;line-height:1.2;margin-bottom:12px;font-family:'Sora',sans-serif">Your money,<br>fully secured.</h1>
+        <h1 style="color:white;font-size:28px;font-weight:800;letter-spacing:-.8px;line-height:1.2;margin-bottom:12px;font-family:'Sora',sans-serif">Time is money,<br>Save both.</h1>
         <p style="color:rgba(255,255,255,.6);font-size:13px;line-height:1.75;margin-bottom:32px;max-width:260px;font-family:'Sora',sans-serif">The smartest way to send, receive and manage money — with real-time fraud detection built in.</p>
         <div style="display:flex;flex-direction:column;gap:14px">
           <div style="display:flex;align-items:center;gap:12px"><div style="width:34px;height:34px;background:rgba(255,255,255,.1);border-radius:10px;border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">🔐</div><div style="color:rgba(255,255,255,.8);font-size:13px;font-weight:500;font-family:'Sora',sans-serif"><strong style="color:white;font-weight:700">End-to-end encrypted</strong> payments</div></div>
@@ -2508,46 +2507,24 @@ function stopNotifPolling() {
 // ═══════════════════════════════════════
 function updateFraudMeter() {
   const amount   = parseFloat(document.getElementById("sendAmount").value) || 0;
-  
-  const location = document.getElementById("sendLocation").value.trim();
-  const wrap     = document.getElementById("fraudMeterWrap");
   const receiverEl = document.getElementById("sendReceiver");
-const receiver   = receiverEl.dataset.resolvedEmail || receiverEl.value.trim();
+  const receiver = receiverEl.dataset.resolvedEmail || receiverEl.value.trim();
+  const wrap     = document.getElementById("fraudMeterWrap");
+
   if (!amount && !receiver) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
 
-  let score = 0;
-  const factors = [];
+  // ── use the SAME score as the real payment flow ──
+  const score   = computeFraudScore();
+  const factors = window._lastFraudFactors || [];
 
-  if (amount > 50000)      { score += 60; factors.push({ label:"Large amount",  color:"var(--red)",    icon:"🔴" }); }
-  else if (amount > 20000) { score += 40; factors.push({ label:"High amount",   color:"var(--orange)", icon:"🟠" }); }
-  else if (amount > 5000)  { score += 20; factors.push({ label:"Medium amount", color:"var(--orange)", icon:"🟡" }); }
-  else if (amount > 0)     { score += 5;  factors.push({ label:"Low amount",    color:"var(--green)",  icon:"🟢" }); }
-
-  if (!location) { score += 20; factors.push({ label:"No location",   color:"var(--orange)", icon:"📍" }); }
-  else           {              factors.push({ label:"Location set",  color:"var(--green)",  icon:"✅" }); }
-
-  const knownReceivers = appState.transactions.map(t => t.receiver.toLowerCase());
-  if (receiver && !knownReceivers.includes(receiver.toLowerCase())) {
-    score += 15; factors.push({ label:"New recipient",   color:"var(--orange)", icon:"👤" });
-  } else if (receiver) {
-    factors.push({ label:"Known recipient", color:"var(--green)", icon:"✅" });
-  }
-
-  const hour = new Date().getHours();
-  if (hour < 5 || hour >= 23) { score += 10; factors.push({ label:"Odd hours", color:"var(--orange)", icon:"🌙" }); }
-
-  if (amount > appState.balance * 0.8) {
-    score += 15; factors.push({ label:"Near balance limit", color:"var(--red)", icon:"⚠️" });
-  }
-
-  score = Math.min(100, score);
   const bar   = document.getElementById("fraudMeterBar");
   const label = document.getElementById("fraudMeterLabel");
   const facEl = document.getElementById("fraudMeterFactors");
 
   bar.style.width = score + "%";
-if (score >= 75) {
+
+  if (score >= 75) {
     bar.style.background   = "var(--red)";
     label.style.background = "var(--red-light)";
     label.style.color      = "var(--red)";
@@ -2565,7 +2542,11 @@ if (score >= 75) {
   }
 
   facEl.innerHTML = factors.map(f =>
-    `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;background:var(--surface2);color:${f.color};border:1px solid var(--border)">${f.icon} ${f.label}</span>`
+    `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;
+      padding:3px 10px;border-radius:100px;background:var(--surface2);
+      color:${f.color};border:1px solid var(--border)">
+      ${f.icon} ${f.label}
+    </span>`
   ).join("");
 }
 
@@ -2762,23 +2743,48 @@ async function confirmAddMoney() {
   const amt = parseFloat(document.getElementById("addAmtInput").value);
   if (!amt || amt <= 0) { toast("Please enter a valid amount", "error"); return; }
   if (amt > 100000)     { toast("Maximum ₹1,00,000 per top-up", "error"); return; }
+
+  // Store the amount and trigger PIN first
+  window._pendingAddMoney = amt;
+  closeModal("addMoneyModal");
+  openAddMoneyPIN();
+}
+
+function openAddMoneyPIN() {
+  payPinBuffer = "";
+  updatePayPinDots();
+  document.getElementById("payPinErr").textContent = "";
+  const stored = safeStorage.getItem(getPINKey());
+  payPinMode = stored ? "verify" : "set";
+  document.getElementById("pinModalSub").textContent = stored
+    ? "Enter your PIN to confirm adding money"
+    : "🆕 Create a 4-digit PIN to secure your wallet";
+  
+  // Temporarily swap the PIN confirm action
+  window._pinAction = "addMoney";
+  openModal("paymentPinModal");
+}
+async function _finalizeAddMoney() {
+  window._pinAction = null;
+  const amt = window._pendingAddMoney;
+  window._pendingAddMoney = null;
+  if (!amt) return;
+
   const btn = document.getElementById("addMoneyBtn");
-  btn.innerHTML = '<span class="spinner"></span>';
-  btn.disabled  = true;
+  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
   try {
     const data = await api("POST", "payment/add-money", { amount: amt });
     appState.balance   = data.balance;
     appState.rewardPts = data.rewardPoints || appState.rewardPts;
     saveState();
     refreshDashboard();
-    closeModal("addMoneyModal");
     document.getElementById("addAmtInput").value = "";
     toast(`₹${fmt(amt)} added to your wallet! 🎉`, "success");
   } catch (err) {
     toast(err.message, "error");
+    openModal("addMoneyModal"); // reopen so user can retry
   } finally {
-    btn.innerHTML = "Add Money";
-    btn.disabled  = false;
+    if (btn) { btn.innerHTML = "Add Money"; btn.disabled = false; }
   }
 }
 
@@ -2930,73 +2936,108 @@ function showBlockedModal(score, factors) {
 // ═══════════════════════════════════════
 async function initiateSend() {
   const receiverEl = document.getElementById('sendReceiver');
-const receiver = (receiverEl.dataset.resolvedEmail || receiverEl.value).trim();
+  const receiver   = (receiverEl.dataset.resolvedEmail || receiverEl.value).trim();
   const amount     = parseFloat(document.getElementById('sendAmount').value);
   const location   = document.getElementById('sendLocation').value.trim() || 'unknown';
   const note       = document.getElementById('sendNote').value.trim();
   const errEl      = document.getElementById('sendErr');
   const btn        = document.getElementById('sendBtn');
-
+ 
   errEl.classList.remove('show');
-
-  if (!receiver)          { errEl.textContent = 'Please enter a recipient email or UPI ID ❌'; errEl.classList.add('show'); return; }
-  if (!amount || amount <= 0) { errEl.textContent = 'Please enter a valid amount ❌'; errEl.classList.add('show'); return; }
-  if (amount > appState.balance) { errEl.textContent = `Insufficient balance ❌ You have ₹${fmt(appState.balance)}`; errEl.classList.add('show'); return; }
-
-  // Per-transaction spend limit cap
-  const spendLimitEl = document.getElementById('spendLimitRange');
-  const spendLimit = spendLimitEl ? parseInt(spendLimitEl.value) : 100000;
-  const savedLimit = parseInt(safeStorage.getItem('sp_spend_limit') || spendLimit);
-  if (amount > savedLimit) {
-    errEl.textContent = `Amount exceeds your per-transaction limit of ₹${fmt(savedLimit)}. Update it in Wallet → Spending Limit.`;
+ 
+  // ── Basic field validation ──
+  if (!receiver) {
+    errEl.textContent = 'Please enter a recipient email or UPI ID ❌';
     errEl.classList.add('show');
     return;
   }
-    // Block if card is frozen
+  if (!amount || amount <= 0) {
+    errEl.textContent = 'Please enter a valid amount ❌';
+    errEl.classList.add('show');
+    return;
+  }
+  if (amount > appState.balance) {
+    errEl.textContent = `Insufficient balance ❌ You have ₹${fmt(appState.balance)}`;
+    errEl.classList.add('show');
+    return;
+  }
+ 
+  // ── Daily limit check (FIX) ──
+  const todayStr   = new Date().toDateString();
+  const myEmail    = appState.email.toLowerCase().trim();
+  const todaySpent = appState.transactions
+    .filter(t =>
+      new Date(t.createdAt).toDateString() === todayStr &&
+      t.sender.toLowerCase() === myEmail
+    )
+    .reduce((s, t) => s + t.amount, 0);
+ 
+  const DAILY_LIMIT = 100000;
+  const remaining   = Math.max(0, DAILY_LIMIT - todaySpent);
+ 
+  if (todaySpent >= DAILY_LIMIT) {
+    errEl.textContent = `Daily limit reached ❌ You've used ₹${fmt(todaySpent)} of your ₹1,00,000 daily limit. Try again tomorrow.`;
+    errEl.classList.add('show');
+    return;
+  }
+  if (amount > remaining) {
+    errEl.textContent = `Daily limit exceeded ❌ You can only send ₹${fmt(remaining)} more today (used ₹${fmt(todaySpent)} of ₹1,00,000).`;
+    errEl.classList.add('show');
+    return;
+  }
+ 
+  // ── Per-transaction spend limit cap ──
+  const spendLimitEl = document.getElementById('spendLimitRange');
+  const savedLimit = parseInt(safeStorage.getItem('sp_spend_limit') || '100000');
+  if (amount > savedLimit) {
+    errEl.textContent = `₹${fmt(amount)} exceeds your saved per-transaction limit of ₹${fmt(savedLimit)}. Go to Wallet → Spending Limit to increase it.`;
+    errEl.classList.add('show');
+    return;
+  }
+ 
+  // ── Card freeze check ──
   if (appState.cardFrozen) {
     errEl.textContent = '🥶 Your card is frozen. Unfreeze it in Wallet → Freeze Card before sending.';
     errEl.classList.add('show');
     return;
   }
-
-    btn.innerHTML = '<span class="spinner"></span> Checking...';
+ 
+  btn.innerHTML = '<span class="spinner"></span> Checking...';
   btn.disabled  = true;
-
+ 
   try {
-// ── Compute score for display only — never block client-side ──
+    // ── Compute fraud score for logging only (never block client-side) ──
     const currentScore = computeFraudScore();
-    // Just log it locally for the admin panel's reference (no block)
     if (currentScore >= 85) {
-      const flagged = JSON.parse(safeStorage.getItem("sp_flagged_txns") || "[]");
+      const flagged = JSON.parse(safeStorage.getItem('sp_flagged_txns') || '[]');
       flagged.unshift({
         receiver, amount, score: currentScore,
         timestamp: new Date().toISOString(),
         factors: (window._lastFraudFactors || []).map(f => f.label)
       });
-      safeStorage.setItem("sp_flagged_txns", JSON.stringify(flagged.slice(0, 20)));
+      safeStorage.setItem('sp_flagged_txns', JSON.stringify(flagged.slice(0, 20)));
     }
-
+ 
     const data = await api('POST', 'payment/send-otp', { amount, location });
-
+ 
     // Store pending payment details for later
     pendingPayment = { receiver, amount, location, note, riskLevel: data.riskLevel };
-
-if (data.skipOtp) {
-  pendingPayment.validatedOtp = null;   // explicitly null = skip OTP on server too
-  pendingPayment.skipOtp = true;
-  openPaymentPIN();
-}
-    else {
-  document.getElementById('otpSubText').textContent =
-    `⚠️ ${data.riskLevel} risk — OTP sent to ${appState.email}`;
-  openOTPModal();                                     // ← FIRST
-  showRiskBanner(data.riskLevel.toLowerCase());       // ← SECOND
-}
+ 
+    if (data.skipOtp) {
+      pendingPayment.validatedOtp = null;
+      pendingPayment.skipOtp      = true;
+      openPaymentPIN();
+    } else {
+      document.getElementById('otpSubText').textContent =
+        `⚠️ ${data.riskLevel} risk — OTP sent to ${appState.email}`;
+      openOTPModal();
+      showRiskBanner(data.riskLevel.toLowerCase());
+    }
   } catch (err) {
     errEl.textContent = err.message;
     errEl.classList.add('show');
   } finally {
-    btn.innerHTML = 'Send Money';
+    btn.innerHTML = 'Send Money →';
     btn.disabled  = false;
   }
 }
@@ -3243,6 +3284,11 @@ function toggleCardFreeze() {
 function updateSpendLimit() {
   const v = document.getElementById("spendLimitRange").value;
   document.getElementById("spendLimitLabel").textContent = "₹" + fmt(Number(v));
+  const saved = safeStorage.getItem('sp_spend_limit');
+  const lbl = document.getElementById("spendLimitLabel");
+  if (saved && saved !== v) {
+    lbl.title = "Active limit: ₹" + fmt(Number(saved)) + " — click Save to apply ₹" + fmt(Number(v));
+  }
 }
 // ── PAYMENT PIN ──────────────────────────────────────────
 let payPinBuffer = "";
@@ -3282,33 +3328,29 @@ function checkPaymentPIN() {
   const stored = safeStorage.getItem(getPINKey());
   
   if (!stored) {
-    // No PIN exists yet — save what user just entered as their new PIN
     safeStorage.setItem(getPINKey(), payPinBuffer);
     toast("Payment PIN created! 🔐", "success");
     closeModal("paymentPinModal");
-    finalizePayment();
+    window._pinAction === "addMoney" ? _finalizeAddMoney() : finalizePayment();
   } else if (payPinBuffer === stored) {
-    // PIN matches — proceed
     closeModal("paymentPinModal");
-    finalizePayment();
+    window._pinAction === "addMoney" ? _finalizeAddMoney() : finalizePayment();
   } else {
-    // Wrong PIN — shake and reset
     document.getElementById("payPinErr").textContent = "Wrong PIN. Try again.";
     document.querySelectorAll("#payPinDots .pin-dot").forEach(d => {
-      d.classList.remove("shake");
-      void d.offsetWidth;
-      d.classList.add("shake");
+      d.classList.remove("shake"); void d.offsetWidth; d.classList.add("shake");
     });
     payPinBuffer = "";
     setTimeout(updatePayPinDots, 400);
-    // Do NOT call finalizePayment here
   }
 }
 
 function cancelPaymentPIN() {
   closeModal("paymentPinModal");
+  window._pinAction = null;
+  window._pendingAddMoney = null;
   pendingPayment = null;
-  toast("Payment cancelled", "info");
+  toast("Cancelled", "info");
 }
 
 async function finalizePayment() {
@@ -3668,10 +3710,15 @@ async function confirmLoan(amt, tenure, otp, income) {
   const mr  = currentLoanType.rate / 1200;
   const pow = Math.pow(1+mr, tenure);
   const emi = Math.round(mr>0 ? amt*mr*pow/(pow-1) : amt/tenure);
-  await api("POST","payment/loans/apply",{
+  const data = await api("POST","payment/loans/apply",{
     loanType:currentLoanType.type, principal:amt, emi, tenure,
     rate:currentLoanType.rate, monthlyIncome:income||0, otp:otp||""
   });
+    if (data.newBalance !== undefined) {
+    appState.balance = data.newBalance;
+    saveState();
+    refreshDashboard();
+  }
   closeModal("loanModal");
   document.getElementById("loanApplyBtn").innerHTML = "Verify &amp; Apply →";
   document.getElementById("loanApplyBtn").disabled  = false;
