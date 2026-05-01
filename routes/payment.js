@@ -423,6 +423,13 @@ if (fraud.level === "HIGH") {
     // ── Deduct from sender ───────────────────────────────────
     sender.balance     -= totalDeducted;
     sender.rewardPoints = (sender.rewardPoints || 0) + Math.floor(amount / 100);
+    // ── Update trust score based on risk level ───────────────
+sender.trustScore = Math.min(100, Math.max(0,
+  fraud.level === "LOW"    ? Math.min(100, (sender.trustScore || 100) + 1)  :
+  fraud.level === "MEDIUM" ? Math.max(0,   (sender.trustScore || 100) - 3)  :
+                             Math.max(0,   (sender.trustScore || 100) - 10)
+));
+
     await sender.save();
 
     // ── Credit receiver ──────────────────────────────────────
