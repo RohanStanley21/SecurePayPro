@@ -135,7 +135,7 @@
           <div class="auth-input-wrap">
             <span class="auth-icon-left">🔒</span>
             <input id="loginPassword" type="password" class="auth-input has-right" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password">
-            <button class="auth-eye-btn" onclick="togglePW('loginPassword',this)" type="button">👁</button>
+            <button class="auth-eye-btn" onclick="togglePW('loginPassword',this)" type="button" aria-label="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </div>
         </div>
         <div style="text-align:right;margin-bottom:20px;margin-top:-6px">
@@ -196,7 +196,7 @@
           <div class="auth-input-wrap">
             <span class="auth-icon-left">🔒</span>
             <input id="regPw" type="password" class="auth-input has-right" placeholder="Create a strong password" oninput="updateRegSteps()" autocomplete="new-password">
-            <button class="auth-eye-btn" onclick="togglePW('regPw',this)" type="button">👁</button>
+            <button class="auth-eye-btn" onclick="togglePW('regPw',this)" type="button" aria-label="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </div>
           <div id="pwStrengthWrap" style="display:none;margin-top:7px">
             <div style="display:flex;gap:4px">
@@ -285,7 +285,7 @@
           <div class="auth-input-wrap">
             <span class="auth-icon-left">🔒</span>
             <input id="fpNewPw" type="password" class="auth-input has-right" placeholder="Min 8 chars, letter + number + symbol" oninput="checkFpPwStrength()">
-            <button class="auth-eye-btn" onclick="togglePW('fpNewPw',this)" type="button">👁</button>
+            <button class="auth-eye-btn" onclick="togglePW('fpNewPw',this)" type="button" aria-label="Show password"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </div>
           <div id="fpPwStrengthWrap" style="display:none;margin-top:7px">
             <div style="display:flex;gap:4px">
@@ -1278,21 +1278,21 @@ const safeStorage = (() => {
 // STATE
 // ═══════════════════════════════════════
 let appState = {
-  token:          safeStorage.getItem("sp_token"),
-  email:          safeStorage.getItem("sp_email") || "",
-  name:           safeStorage.getItem("sp_name")  || "",
-  role:           safeStorage.getItem("sp_role")  || "user",
-  balance:        parseFloat(safeStorage.getItem("sp_balance") || "0"),
-  rewardPts:      parseInt(safeStorage.getItem("sp_pts")       || "0"),
-  trustScore:     parseInt(safeStorage.getItem("sp_trust")     || "100"),
-  activeLoans:    JSON.parse(safeStorage.getItem("sp_loans")          || "[]"),
-  completedLoans: JSON.parse(safeStorage.getItem("sp_completedLoans") || "[]"),
-  transactions:   [],
-  darkMode:       safeStorage.getItem("sp_dark") === "true",
-  kycStep:        parseInt(safeStorage.getItem("sp_kyc")       || "1"),
-  linkedBanks:    JSON.parse(safeStorage.getItem("sp_banks")   || "[]"),
-  cardFrozen:     safeStorage.getItem("sp_frozen") === "true",
-  notifications:  [],
+    token: safeStorage.getItem('sptoken'),
+    email: safeStorage.getItem('spemail'),
+    name: safeStorage.getItem('spname'),
+    role: safeStorage.getItem('sprole') || 'user',
+    balance: parseFloat(safeStorage.getItem('spbalance') || 0),
+    rewardPts: parseInt(safeStorage.getItem('sppts') || 0),
+    trustScore: parseInt(safeStorage.getItem('sptrust') || 100),
+    activeLoans: JSON.parse(safeStorage.getItem('sploans') || '[]'),
+    completedLoans: JSON.parse(safeStorage.getItem('spcompletedLoans') || '[]'),
+    transactions: JSON.parse(safeStorage.getItem('sptransactions') || '[]'),  // ← FIXED!
+    darkMode: safeStorage.getItem('spdark') === 'true',
+    kycStep: parseInt(safeStorage.getItem('spkyc') || 1),
+    linkedBanks: JSON.parse(safeStorage.getItem('spbanks') || '[]'),
+    cardFrozen: safeStorage.getItem('spfrozen') === 'true',
+    notifications: JSON.parse(safeStorage.getItem('spnotifications') || '[]')  // ← ALSO FIX THIS!
 };
 
 let pendingPayment   = null;
@@ -1321,6 +1321,8 @@ function saveState() {
   safeStorage.setItem("sp_dark",    appState.darkMode);
   safeStorage.setItem("sp_banks",   JSON.stringify(appState.linkedBanks));
   safeStorage.setItem("sp_frozen",  appState.cardFrozen);
+     safeStorage.setItem('sptransactions', JSON.stringify(appState.transactions));
+    safeStorage.setItem('spnotifications', JSON.stringify(appState.notifications));
   if (appState.name)  safeStorage.setItem("sp_name",  appState.name);
   if (appState.email) safeStorage.setItem("sp_email", appState.email);
   if (appState.role)  safeStorage.setItem("sp_role",  appState.role);
@@ -1557,9 +1559,17 @@ function doLogout() {
 // ═══════════════════════════════════════
 async function bootApp() {
   // Clear stale "approved" reviews on fresh boot so they don't flash
-const reviewKey = "sp_pending_reviews_" + appState.email;
+// On boot: NEVER wipe pending reviews — keep them until admin resolves
+const reviewKey = "sp_pending_reviews_" + (appState.email || "").toLowerCase().trim();
 const existingReviews = JSON.parse(safeStorage.getItem(reviewKey) || "[]");
-const cleaned = existingReviews.filter(r => r.status === "pending");
+const now = Date.now();
+const cleaned = existingReviews.filter(r => {
+  // Always keep pending — admin hasn't acted yet
+  if (r.status === "pending") return true;
+  // Keep approved/rejected for 24h so user sees the result
+  const age = now - new Date(r.time).getTime();
+  return age < 24 * 60 * 60 * 1000;
+});
 safeStorage.setItem(reviewKey, JSON.stringify(cleaned));
   // Normalize email immediately — all localStorage keys depend on this
   appState.email = (appState.email || "").toLowerCase().trim();
@@ -1608,33 +1618,32 @@ safeStorage.setItem(reviewKey, JSON.stringify(cleaned));
       btn.style.border     = "1px solid rgba(239,35,60,.2)";
     }
   }
-  refreshDashboard();
-  renderPendingReviews();
+refreshDashboard();
+renderPendingReviews();
+setTimeout(renderPendingReviews, 500);
 
   // Poll for approval status every 15s while app is open
-  if (!window._pendingPollID) {
-    window._pendingPollID = setInterval(async () => {
-      const key     = "sp_pending_reviews_" + appState.email;
-      const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
-      if (!reviews.some(r => r.status === "pending")) return;
+if (!window.pendingPollID) {
+  window.pendingPollID = setInterval(async () => {
+    const currentEmail = (appState.email || "").toLowerCase().trim();
+    const key     = "sp_pending_reviews_" + currentEmail;
+    const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
 
-      // Check notifications — if we got an approval notif, refresh
-      try {
-        const res  = await fetch(API + "notifications", {
-          headers: { Authorization: "Bearer " + appState.token }
-        });
-        const data = await res.json();
-        const hasApproval = (data.notifications || []).some(n =>
-          n.type === "sent" && n.title?.includes("Approved")
-        );
-        if (hasApproval) {
-          await refreshSenderAfterApproval();
-        }
-      } catch(e) {}
-    }, 15000);
-  }
-  loadTransactions();
-  loadActiveLoans();
+    // ✅ Only poll if there's actually a pending review
+    if (!reviews.some(r => r.status === "pending")) return;
+
+    // ✅ Always directly check server status — don't rely on notification text
+    await refreshSenderAfterApproval();
+  }, 15000);
+}
+loadTransactions();
+loadActiveLoans();
+
+// ✅ On boot, immediately check server if any pending reviews are unresolved
+const _bootReviews = JSON.parse(safeStorage.getItem(reviewKey) || "[]");
+if (_bootReviews.some(r => r.status === "pending")) {
+  setTimeout(refreshSenderAfterApproval, 1500); // small delay so UI loads first
+}
 renderLinkedBanks();
 
 // Restore saved spend limit
@@ -1731,18 +1740,21 @@ function initDashChart() {
   });
 }
 async function loadTransactions() {
-  try {
-    const data = await api("GET", "payment/my");
-    appState.transactions = data.transactions || [];
-    const myEmail = appState.email.toLowerCase().trim();
-    renderAllTxns(appState.transactions, myEmail);
-    renderRecentTxns();
-    renderCardTxns();
-    refreshTransactionStats();
-  } catch(e) {
-    console.log("loadTransactions error:", e);
-    appState.transactions = [];
-  }
+    try {
+        const data = await api('GET', 'payment/my');
+        appState.transactions = data.transactions.filter(t => t.status === 'completed' || !t.status);
+        
+        saveState(); // ← ADD THIS LINE!
+        
+        const myEmail = appState.email.toLowerCase().trim();
+        renderAllTxns(appState.transactions, myEmail);
+        renderRecentTxns();
+        renderCardTxns();
+        refreshTransactionStats();
+    } catch(e) {
+        console.log('loadTransactions error', e);
+        appState.transactions = [];
+    }
 }
 
 function addAdminNav() {
@@ -2037,9 +2049,13 @@ function refreshTransactionStats() {
   document.getElementById("statSent").textContent     = "₹" + fmt(sent);
   document.getElementById("statReceived").textContent = "₹" + fmt(received);
   const today = new Date().toDateString();
-  const todaySpent = appState.lastDailyUsed || appState.transactions
-    .filter(t => new Date(t.createdAt).toDateString() === today && t.sender.toLowerCase() === myEmail)
-    .reduce((s,t) => s+t.amount, 0);
+const todaySpent = appState.transactions
+  .filter(t =>
+    new Date(t.createdAt).toDateString() === today &&
+    t.sender.toLowerCase() === myEmail &&
+    t.status === "completed" // ✅ ONLY count completed — not blocked/rejected
+  )
+  .reduce((s, t) => s + t.amount, 0);
   const pct = Math.min(100, Math.round((todaySpent / 100000) * 100));
   document.getElementById("walletDailySpent").textContent = "₹" + fmt(todaySpent);
   const bar = document.getElementById("dailyLimitBar");
@@ -2367,12 +2383,13 @@ async function initiateSend() {
   // ── Daily limit check (FIX) ──
   const todayStr   = new Date().toDateString();
   const myEmail    = appState.email.toLowerCase().trim();
-  const todaySpent = appState.transactions
-    .filter(t =>
-      new Date(t.createdAt).toDateString() === todayStr &&
-      t.sender.toLowerCase() === myEmail
-    )
-    .reduce((s, t) => s + t.amount, 0);
+const todaySpent = appState.transactions
+  .filter(t =>
+    new Date(t.createdAt).toDateString() === todayStr &&
+    t.sender.toLowerCase() === myEmail &&
+    t.status === "completed" // ✅ ONLY count actually completed transactions
+  )
+  .reduce((s, t) => s + t.amount, 0);
  
   const DAILY_LIMIT = 100000;
   const remaining   = Math.max(0, DAILY_LIMIT - todaySpent);
@@ -2791,9 +2808,9 @@ if (data.requiresApproval) {
   safeStorage.setItem(key, JSON.stringify(reviews.slice(0, 10)));
 
   toast("⏳ Transaction sent for admin review! You'll be notified once approved.", "info");
-  gotoTab("dashboard");
-  renderPendingReviews();
-  return;
+gotoTab('dashboard');
+setTimeout(renderPendingReviews, 100);
+return;
 }
 
     await onPaymentSuccess(data, amount, receiver);
@@ -4413,58 +4430,85 @@ async function adminApprove(id) {
 
 async function refreshSenderAfterApproval() {
   try {
-    // Always fetch fresh balance from server for the current user
+    // Always fetch fresh balance from server
     const bal = await api("GET", "payment/balance");
     appState.balance    = bal.balance;
     appState.rewardPts  = bal.rewardPoints ?? appState.rewardPts;
     appState.trustScore = bal.trustScore   ?? appState.trustScore;
     saveState();
     refreshDashboard();
- 
+
     // Reload transactions so approved txn appears in history
     await loadTransactions();
- 
-    // Mark pending reviews as approved in localStorage for THIS user
+
     const currentEmail = (appState.email || "").toLowerCase().trim();
     const key     = "sp_pending_reviews_" + currentEmail;
     const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
- 
-    // Check if any are still pending on the server
+
+    // ✅ Fetch still-pending IDs from server
     let serverPendingIds = new Set();
     try {
       const data = await api("GET", "payment/pending-txns-user");
-      (data.pending || []).forEach(p => serverPendingIds.add(p._id.toString()));
+      (data || []).forEach(p => serverPendingIds.add((p._id || p.id).toString()));
     } catch(e) {
-      // Endpoint may not exist yet — fall back to marking all as approved
-      serverPendingIds = null;
+      serverPendingIds = null; // fall back if endpoint fails
     }
- 
-const updated = reviews.map(r => {
-  if (r.status !== "pending") return r;
-  if (serverPendingIds !== null) {
-    return serverPendingIds.has(r.id) ? r : { ...r, status: "approved" };
-  }
-  return { ...r, status: "approved" };
-});
 
-safeStorage.setItem(key, JSON.stringify(updated));
+    // ✅ Fetch rejected IDs from the new endpoint
+    let serverRejectedIds = new Set();
+    try {
+      const allData = await api("GET", "payment/pending-txns-user-all");
+      (allData || [])
+        .filter(p => p.status === "rejected")
+        .forEach(p => serverRejectedIds.add((p._id || p.id).toString()));
+    } catch(e) {
+      // silently skip if endpoint not yet added
+    }
 
-// Show approved state immediately, then fade out after 5s
-renderPendingReviews();
-const wasApproved = updated.some(r => r.status === "approved");
-if (wasApproved) {
-  toast("✅ Your transaction was approved! Balance updated.", "success");
+    const updated = reviews.map(r => {
+      if (r.status !== "pending") return r;
+
+      // ✅ Check rejected first — rejected means no money moved
+      if (serverRejectedIds.has(r.id))
+        return { ...r, status: "rejected" };
+
+      // ✅ No longer in pending list and not rejected = approved
+      if (serverPendingIds !== null && !serverPendingIds.has(r.id))
+        return { ...r, status: "approved" };
+
+      // If pending endpoint totally failed, assume approved (old fallback)
+      if (serverPendingIds === null)
+        return { ...r, status: "approved" };
+
+      return r; // still pending
+    });
+
+    safeStorage.setItem(key, JSON.stringify(updated));
+    renderPendingReviews();
+
+    // ✅ Toast for approvals
+    const justApproved = updated.filter((r, i) =>
+      r.status === "approved" && reviews[i]?.status === "pending"
+    );
+if (justApproved.length) {
+    justApproved.forEach(r => toast(`Your ₹${fmt(r.amount)} payment to ${r.receiver} was APPROVED!`, 'success'));
+    renderPendingReviews(); // ← add () to actually call it
 }
- 
-    // Auto-remove the card after 4 seconds once all are resolved
-    const hasUnresolved = updated.some(r => r.status === "pending");
-    if (!hasUnresolved) {
-      setTimeout(() => {
-        safeStorage.setItem(key, JSON.stringify([]));
-        renderPendingReviews();
-      }, 4000);
+
+const justRejected = updated.filter((r, i) =>
+    r.status === 'rejected' && reviews[i]?.status === 'pending'
+);
+if (justRejected.length) {
+    justRejected.forEach(r => toast(`Your ₹${fmt(r.amount)} payment to ${r.receiver} was REJECTED. No money deducted.`, 'error'));
+    renderPendingReviews(); // ← add () to actually call it
+}
+
+// Auto-clear resolved cards after 5s (not 4s)
+const hasUnresolved = updated.some(r => r.status === 'pending');
+if (!hasUnresolved) setTimeout(() => { safeStorage.setItem(key, JSON.stringify([])); renderPendingReviews(); }, 5000);
     }
-  } catch(e) {
+
+   catch(e) {
     console.log("refreshSenderAfterApproval error:", e);
   }
 }
@@ -4481,32 +4525,49 @@ async function adminReject(id) {
     toast(err.message, "error");
   }
 }
+// TOGGLE PASSWORD VISIBILITY
+// TOGGLE PASSWORD VISIBILITY
+function togglePW(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    btn.innerHTML = isHidden ? 
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' :
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+
+// RENDER PENDING REVIEWS
 function renderPendingReviews() {
-  const currentEmail = (appState.email || "").toLowerCase().trim();
-  if (!currentEmail) return;
+    const currentEmail = (appState.email || "").toLowerCase().trim();
+    if (!currentEmail) return;
 
-  const key     = "sp_pending_reviews_" + currentEmail;
-  const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
+    const key = `sp_pending_reviews_${currentEmail}`;
+    const reviews = JSON.parse(safeStorage.getItem(key) || "[]");
 
-  const existing = document.getElementById("pendingReviewsCard");
-  if (existing) existing.remove();
+    const existing = document.getElementById("pendingReviewsCard");
+    if (existing) existing.remove();
 
-  if (!reviews.length) return;
+    if (!reviews.length) return;
+
+    // Keep pending reviews visible - don't auto-clear
+    // Admin needs to approve/reject them first
+
 
   // Auto-clear fully resolved reviews after 6 seconds
-  const allResolved = reviews.every(r => r.status !== "pending");
-  if (allResolved) {
+const allResolved = reviews.every(r => r.status !== 'pending')
+if (allResolved) {
+    const hasRejected = reviews.some(r => r.status === 'rejected')
+    const delay = hasRejected ? 10000 : 5000  // Keep this for approved/rejected
     setTimeout(() => {
-      safeStorage.setItem(key, JSON.stringify([]));
-      const card = document.getElementById("pendingReviewsCard");
-      if (card) {
-        card.style.transition = "opacity 0.5s ease, transform 0.5s ease";
-        card.style.opacity = "0";
-        card.style.transform = "translateY(-10px)";
-        setTimeout(() => card.remove(), 500);
-      }
-    }, 5000);
-  }
+        // Only clear if STILL all resolved (double-check)
+        const key = `sppendingreviews_${currentEmail}`
+        const latest = JSON.parse(safeStorage.getItem(key) || '[]')
+        if (latest.every(r => r.status !== 'pending')) {
+            safeStorage.setItem(key, JSON.stringify([]))
+            renderPendingReviews()
+        }
+    }, delay)
+}
 
   const card = document.createElement("div");
   card.id = "pendingReviewsCard";
@@ -4577,14 +4638,13 @@ function renderPendingReviews() {
       </div>
     </div>`;
 
-  const dashPanel = document.getElementById("tab-dashboard");
-  if (dashPanel) dashPanel.insertBefore(card, dashPanel.firstChild);
+const balanceHero = document.querySelector('.balance-hero');
+const dashPanel = document.getElementById('tab-dashboard');
+if (balanceHero && dashPanel) {
+  dashPanel.insertBefore(card, balanceHero);
+} else if (dashPanel) {
+  dashPanel.insertBefore(card, dashPanel.firstChild);
 }
-function togglePW(inputId, btn) {
-  const input = document.getElementById(inputId);
-  const isHidden = input.type === "password";
-  input.type = isHidden ? "text" : "password";
-  btn.textContent = isHidden ? "🙈" : "👁";
 }
 
 function updateRegSteps() {

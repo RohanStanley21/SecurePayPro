@@ -344,8 +344,12 @@ router.post("/verify-otp", auth, async (req, res) => {
     // ── Daily limit check ────────────────────────────────────
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const todayTxns  = await Transaction.find({ sender: sender.email, createdAt: { $gte: todayStart } });
-    const todayTotal = todayTxns.reduce((s, t) => s + t.amount, 0);
+    const todayTxns = await Transaction.find({
+  sender: sender.email,
+  createdAt: { $gte: todayStart },
+  status: "completed" // ✅ ONLY count completed — blocked/rejected never moved money
+});
+const todayTotal = todayTxns.reduce((s, t) => s + t.amount, 0);
     if (todayTotal + amount > 100000) {
       return res.status(400).json({
         message: `Daily limit exceeded ❌ Used: ₹${todayTotal.toLocaleString("en-IN")} / ₹1,00,000. Remaining today: ₹${Math.max(0, 100000 - todayTotal).toLocaleString("en-IN")}`
@@ -846,15 +850,29 @@ router.get("/pending-txns", auth, async (req, res) => {
 // GET /api/payment/pending-txns-user  (sender checks their own)
 router.get("/pending-txns-user", auth, async (req, res) => {
   try {
-    if (!PendingTxn) return res.json({ pending: [] });
+    if (!PendingTxn) return res.json([]);
     const sender = await User.findById(req.user.id);
-    const pending = await PendingTxn.find({ sender: sender.email, status: "pending" }).sort({ createdAt: -1 });
-    res.json({ pending });
+    if (!sender) return res.status(404).json({ message: "User not found" });
+    const pending = await PendingTxn.find({ sender: sender.email, status: "pending" })
+      .sort({ createdAt: -1 });
+    res.json(pending); // ✅ plain array, not { pending: [...] }
   } catch (err) {
-    res.status(500).json({ message: "Server error ❌" });
+    res.status(500).json({ message: "Server error" });
   }
 });
-
+// GET /api/payment/pending-txns-user-all  — sender sees ALL their records (any status)
+router.get("/pending-txns-user-all", auth, async (req, res) => {
+  try {
+    if (!PendingTxn) return res.json([]);
+    const sender = await User.findById(req.user.id);
+    const all = await PendingTxn.find({ sender: sender.email })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    res.json(all);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
 // POST /api/payment/pending-txns/:id/approve
 router.post("/pending-txns/:id/approve", auth, async (req, res) => {
   try {
@@ -879,16 +897,21 @@ router.post("/pending-txns/:id/approve", auth, async (req, res) => {
     const receiverUser = await User.findOne({ email: pending.receiver });
     if (receiverUser) { receiverUser.balance += pending.amount; await receiverUser.save(); }
 
-    const txn = await Transaction.create({
-      sender: pending.sender, receiver: pending.receiver,
-      amount: pending.amount, platformFee: pending.platformFee,
-      location: pending.location, note: pending.note,
-      riskScore: pending.fraudScore, riskLevel: pending.riskLevel,
-      isFraud: false, status: "completed", category: "Transfer"
-    });
-
-    pending.status = "approved";
-    await pending.save();
+const txn = await Transaction.create({
+  sender: pending.sender,
+  receiver: pending.receiver,
+  amount: pending.amount,
+  platformFee: pending.platformFee,
+  location: pending.location,
+  note: pending.note,
+  riskScore: pending.fraudScore,
+  riskLevel: pending.riskLevel,
+  isFraud: false,
+  status: "completed",
+  category: "Transfer"           // ← removed the comma and the bad line
+});
+pending.status = "approved";     // ← moved to HERE, outside the object
+await pending.save();
 
     await createNotif(pending.sender, "sent", "✅ Transaction Approved",
       `Your ₹${pending.amount.toLocaleString("en-IN")} payment to ${pending.receiver} was approved. Txn: ${txn.txnId}`,
@@ -907,29 +930,46 @@ router.post("/pending-txns/:id/approve", auth, async (req, res) => {
 // POST /api/payment/pending-txns/:id/reject
 router.post("/pending-txns/:id/reject", auth, async (req, res) => {
   try {
-    if (req.user.role !== "admin") return res.status(403).json({ message: "Admins only ❌" });
-    if (!PendingTxn) return res.status(400).json({ message: "PendingTxn model not loaded ❌" });
+    if (req.user.role !== "admin")
+      return res.status(403).json({ message: "Admins only" });
+    if (!PendingTxn)
+      return res.status(400).json({ message: "PendingTxn model not loaded" });
 
     const pending = await PendingTxn.findById(req.params.id);
-    if (!pending) return res.status(404).json({ message: "Not found ❌" });
+    if (!pending) return res.status(404).json({ message: "Not found" });
 
-    const { reason } = req.body;
-    pending.status = "rejected";
-    pending.reason = reason || "Rejected by admin";
+    if (pending.status !== "pending")
+      return res.status(400).json({ message: `Already ${pending.status}` });
+
+    const reason = req.body.reason || "Rejected by admin";
+    pending.status  = "rejected";
+    pending.reason  = reason;
     await pending.save();
 
-    await createNotif(pending.sender, "security", "❌ Transaction Rejected",
-      `Your ₹${pending.amount.toLocaleString("en-IN")} payment to ${pending.receiver} was rejected. Reason: ${pending.reason}`,
-      pending.amount, pending._id.toString(), "❌");
+    // ✅ Refund sender (HIGH-risk txns DO deduct on verify-otp — actually they DON'T)
+    // HIGH-risk txns are blocked BEFORE deduction in verify-otp.
+    // So NO refund needed. But mark the blocked Transaction as rejected.
+    await Transaction.updateOne(
+      { sender: pending.sender, amount: pending.amount, status: "blocked" },
+      { $set: { status: "rejected", fraudReason: `Rejected by admin: ${reason}` } }
+    );
 
-    sendEmail(pending.sender, "SecurePay — Payment Rejected",
-      `Your payment of Rs.${pending.amount.toLocaleString("en-IN")} to ${pending.receiver} was rejected. Reason: ${pending.reason}. -SecurePay Pro`
+    await createNotif(
+      pending.sender, "security", "Transaction Rejected",
+      `Your ₹${pending.amount.toLocaleString("en-IN")} payment to ${pending.receiver} was rejected. Reason: ${reason}`,
+      pending.amount, pending.id.toString()
+    );
+
+    sendEmail(
+      pending.sender,
+      "SecurePay — Payment Rejected",
+      `Your payment of Rs.${pending.amount.toLocaleString("en-IN")} to ${pending.receiver} was rejected. Reason: ${reason}. No money was deducted. -SecurePay Pro`
     ).catch(() => {});
 
     res.json({ message: "Rejected ✅" });
   } catch (err) {
     console.log("REJECT ERROR:", err);
-    res.status(500).json({ message: "Server error ❌" });
+    res.status(500).json({ message: "Server error" });
   }
 });
 // GET /api/payment/blocked-txns — admin sees all blocked/pending-review txns

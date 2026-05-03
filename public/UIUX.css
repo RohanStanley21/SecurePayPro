@@ -431,7 +431,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.55);
-  z-index: 9999;
+  z-index: 1000;
   align-items: center;
   justify-content: center;
   padding: 20px;
@@ -521,7 +521,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .auth-input-wrap { position:relative; display:flex; align-items:center; }
 .auth-icon-left {
   position:absolute; left:14px; top:50%; transform:translateY(-50%);
-  font-size:15px; pointer-events:none; z-index:2; line-height:1;
+  font-size:15px; pointer-events:none; z-index:1; line-height:1;
 }
 .auth-input {
   width:100%; padding:13px 14px 13px 42px;
@@ -541,9 +541,29 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .auth-input::placeholder { color:var(--text3); }
 .auth-input.has-right { padding-right:44px; }
 .auth-eye-btn {
-  position:absolute; right:14px; top:50%; transform:translateY(-50%);
-  background:none; border:none; cursor:pointer; font-size:16px;
-  color:var(--text2); padding:4px; line-height:1; z-index:2;
+  position: absolute;
+  right: 14px;
+  z-index: 10;
+  pointer-events: auto !important;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 6px;
+  line-height: 1;
+  z-index: 10;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.auth-eye-btn:hover {
+  color: var(--text1);
+  background: var(--surface2);
 }
 .auth-title { font-size:24px; font-weight:800; letter-spacing:-.5px; color:var(--text); margin-bottom:5px; font-family:'Sora',sans-serif; }
 .auth-sub   { font-size:13px; color:var(--text2); font-weight:400; margin-bottom:22px; line-height:1.5; font-family:'Sora',sans-serif; }
@@ -583,6 +603,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   border:1.5px solid var(--border) !important; border-radius:var(--radius-sm) !important;
   color:var(--text) !important; font-size:14px !important;
   font-family:'Sora',sans-serif !important; outline:none !important;
+}
+.auth-input.has-right,
+.field input.has-right {
+  padding-right: 44px !important;
 }
 .field input:focus, .field select:focus {
   border-color:var(--primary) !important; background:var(--surface) !important;
