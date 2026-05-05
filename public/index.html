@@ -388,7 +388,7 @@
           <div class="balance-amount" id="heroBalance">₹0</div>
           <div style="font-size:13px;opacity:.75;margin-top:6px;font-weight:500">Daily limit: ₹1,00,000 &nbsp;·&nbsp; Points: <span id="heroPts">0</span></div>
           <div class="balance-actions">
-            <button class="bb-white" onclick="openModal('addMoneyModal')">+ Add Money</button>
+            
             <button class="bb-ghost" onclick="gotoTab('send')">↗ Send</button>
             <button class="bb-ghost" onclick="gotoTab('wallet')">💳 Cards</button>
             <button class="bb-ghost" onclick="gotoTab('loans')">🏦 Loans</button>
@@ -406,7 +406,6 @@
             <div class="card-body">
               <div class="qa-grid">
                 <button class="qa-btn qab-blue" onclick="gotoTab('send')"><div class="qa-icon">↗</div>Send</button>
-                <button class="qa-btn qab-green" onclick="openModal('addMoneyModal')"><div class="qa-icon">+</div>Add</button>
                 <button class="qa-btn qab-orange" onclick="gotoTab('loans')"><div class="qa-icon">🏦</div>Loan</button>
                 <button class="qa-btn qab-purple" onclick="gotoTab('rewards')"><div class="qa-icon">⭐</div>Rewards</button>
               </div>
@@ -495,97 +494,160 @@
         </div>
       </div>
 
-      <!-- WALLET -->
-      <div id="tab-wallet" class="tab-panel">
-        <button class="wallet-info-btn" onclick="toggleWalletInfo(this)">
-          <span>💳 About Your Wallet</span>
-          <span id="walletInfoArrow" style="font-size:18px;transition:transform .3s">▼</span>
-        </button>
-        <div class="wallet-info-content" id="walletInfoContent">
-          <div style="font-size:13px;color:var(--text2);line-height:1.9;font-weight:500">
-            Your <strong style="color:var(--text)">SecurePay Wallet</strong> is your digital money vault. It has a real-time balance you top up and use to send money.<br>
-            <strong style="color:var(--text)">Virtual Cards</strong> are generated card numbers (Visa) backed by your wallet balance — use them for online purchases where physical cards are needed.<br>
-            <strong style="color:var(--text)">Linked Banks</strong> let you pull money directly from your bank account into the wallet via UPI or NEFT.<br>
-            <strong style="color:var(--text)">Cashback</strong> is earned on every transaction (0.5–1%) and credited as reward points.
-          </div>
-        </div>
-        <div class="g2" style="margin-bottom:16px">
-          <div>
-            <div style="font-size:15px;font-weight:800;margin-bottom:12px">Your Virtual Card</div>
-            <div style="position:relative;margin-bottom:12px">
-              <div class="vcard vcard-visa" onclick="toast('Card details copied to clipboard','info')">
-                <div class="vcard-circle1"></div><div class="vcard-circle2"></div>
-                <div class="vcard-chip"></div>
-                <div class="vcard-num" id="vcardNum">4782 •••• •••• 2341</div>
-                <div style="display:flex;justify-content:space-between;align-items:flex-end">
-                  <div><div class="vcard-name" id="vcardHolder">CARD HOLDER</div><div class="vcard-expiry">Exp: 12/28</div></div>
-                </div>
-                <div class="vcard-type">VISA</div>
-                <div class="vcard-frozen" id="cardFrozenOverlay">
-                  <div style="text-align:center;color:white"><div style="font-size:28px;margin-bottom:6px">🥶</div><div style="font-weight:800;font-size:14px">Card Frozen</div></div>
-                </div>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-outlined btn-sm" onclick="generateCard()">+ New Virtual Card</button>
-              <button class="btn btn-sm" id="freezeBtn" style="background:var(--orange-light);color:var(--orange);border:1px solid rgba(251,133,0,.2)" onclick="toggleCardFreeze()">🥶 Freeze Card</button>
+<!-- WALLET -->
+<div id="tab-wallet" class="tab-panel">
+  <button class="wallet-info-btn" onclick="toggleWalletInfo(this)">
+    <span>💳 About Your Wallet</span>
+    <span id="walletInfoArrow" style="font-size:18px;transition:transform .3s">▼</span>
+  </button>
+  <div class="wallet-info-content" id="walletInfoContent">
+    <div style="font-size:13px;color:var(--text2);line-height:1.9;font-weight:500">
+      Your <strong style="color:var(--text)">SecurePay Wallet</strong> is your digital money vault. It has a real-time balance you use to send money.<br>
+      <strong style="color:var(--text)">Virtual Cards</strong> are generated card numbers (Visa) backed by your wallet balance — use them for online purchases.<br>
+      <strong style="color:var(--text)">Cashback</strong> is earned on every transaction (0.5–1%) and credited as reward points.
+    </div>
+  </div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:start">
+
+<!-- LEFT: Virtual Card -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="font-size:15px;font-weight:800">Your Virtual Card</div>
+      <div style="position:relative">
+        <div class="vcard vcard-visa" onclick="toast('Card details copied to clipboard','info')">
+          <div class="vcard-circle1"></div><div class="vcard-circle2"></div>
+          <div class="vcard-chip"></div>
+          <div class="vcard-num" id="vcardNum">4782 •••• •••• 2341</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-end">
+            <div>
+              <div class="vcard-name" id="vcardHolder">CARD HOLDER</div>
+              <div class="vcard-expiry">Exp: 12/28</div>
             </div>
           </div>
-          <div>
-            <div class="card" style="margin-bottom:16px">
-              <div class="card-header"><div class="card-title">Wallet Stats</div></div>
-              <div class="card-body">
-                <div class="g2">
-                  <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600">Wallet Balance</div><div style="font-size:20px;font-weight:800;letter-spacing:-.5px">₹<span id="cardBal">0</span></div></div>
-                  <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600">Cashback Earned</div><div style="font-size:20px;font-weight:800;letter-spacing:-.5px;color:var(--green)">₹<span id="cashbackAmt">0</span></div></div>
-                </div>
-                <div class="divider"></div>
-                <div class="g2">
-                  <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600">Daily Spent</div><div style="font-size:16px;font-weight:800" id="walletDailySpent">₹0</div></div>
-                  <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600">Daily Limit</div><div style="font-size:16px;font-weight:800">₹1,00,000</div></div>
-                </div>
-                <div class="progress-wrap" style="margin-top:10px"><div class="progress-fill" id="dailyLimitBar" style="width:0%"></div></div>
-                <div style="font-size:11px;color:var(--text3);margin-top:4px;font-weight:600" id="dailyLimitLabel">0% of daily limit used</div>
-              </div>
-            </div>
-            <div class="card">
-              <div class="card-header"><div class="card-title">Spending Limit</div></div>
-              <div class="card-body">
-                <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:600">Set per-transaction cap</div>
-                <div style="display:flex;align-items:center;gap:10px">
-                  <input type="range" id="spendLimitRange" min="1000" max="100000" step="1000" value="50000" oninput="updateSpendLimit()">
-                  <span style="font-weight:800;font-size:14px;color:var(--primary);min-width:80px;text-align:right;font-family:'JetBrains Mono',monospace" id="spendLimitLabel">₹50,000</span>
-                </div>
-                <button class="btn btn-primary btn-sm" onclick="safeStorage.setItem('sp_spend_limit', document.getElementById('spendLimitRange').value); toast('Spending limit saved ✅','success')">Save Limit</button>
-              </div>
+          <div class="vcard-type">VISA</div>
+          <div class="vcard-frozen" id="cardFrozenOverlay">
+            <div style="text-align:center;color:white">
+              <div style="font-size:28px;margin-bottom:6px">🥶</div>
+              <div style="font-weight:800;font-size:14px">Card Frozen</div>
             </div>
           </div>
-        </div>
-        <div class="g2" style="margin-bottom:16px">
-          <div class="card">
-            <div class="card-header"><div class="card-title">Linked Banks / UPI</div><button class="btn btn-tonal btn-sm" onclick="openModal('linkBankModal')">+ Link</button></div>
-            <div class="card-body" id="linkedBanksBody">
-              <div style="text-align:center;padding:20px;color:var(--text2);font-size:13px">No banks linked yet.<br><span style="color:var(--primary);cursor:pointer;font-weight:700" onclick="openModal('linkBankModal')">Link your bank →</span></div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><div class="card-title">UPI Payments</div></div>
-            <div class="card-body">
-              <div style="font-size:13px;color:var(--text2);margin-bottom:14px;font-weight:500;line-height:1.7">
-                Your SecurePay UPI ID:<br>
-                <strong style="color:var(--primary);font-family:'JetBrains Mono',monospace;font-size:14px" id="upiIdEl">loading…</strong>
-                <div style="font-size:11px;color:var(--text3);margin-top:4px">Share this with anyone to receive money instantly</div>
-              </div>
-              <button class="btn btn-outlined btn-sm" onclick="copyUPI()">📋 Copy UPI ID</button>
-              <button class="btn btn-tonal btn-sm" style="margin-left:8px" onclick="sendViaUPI()">↗ Send via UPI</button>
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><div class="card-title">Card Transactions</div></div>
-          <div class="card-body"><table class="m-table"><tbody id="cardTxnBody"><tr><td colspan="3" style="text-align:center;color:var(--text2);padding:24px">No transactions yet</td></tr></tbody></table></div>
         </div>
       </div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outlined btn-sm" onclick="generateCard()">+ New Virtual Card</button>
+        <button class="btn btn-sm" id="freezeBtn" style="background:var(--orange-light);color:var(--orange);border:1px solid rgba(251,133,0,.2)" onclick="toggleCardFreeze()">🥶 Freeze Card</button>
+      </div>
+
+<div class="card">
+        <div class="card-header"><div class="card-title">UPI Payments</div></div>
+        <div class="card-body">
+          <div style="font-size:13px;color:var(--text2);margin-bottom:14px;font-weight:500;line-height:1.7">
+            Your SecurePay UPI ID:<br>
+            <strong style="color:var(--primary);font-family:'JetBrains Mono',monospace;font-size:14px" id="upiIdEl">loading…</strong>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Share this with anyone to receive money instantly</div>
+          </div>
+          <button class="btn btn-outlined btn-sm" onclick="copyUPI()">📋 Copy UPI ID</button>
+          <button class="btn btn-tonal btn-sm" style="margin-left:8px" onclick="sendViaUPI()">↗ Send via UPI</button>
+        </div>
+      </div>
+<!-- Card Transactions moved into left column -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">Card Transactions</div></div>
+        <div class="card-body">
+          <table class="m-table">
+            <tbody id="cardTxnBody">
+              <tr><td colspan="3" style="text-align:center;color:var(--text2);padding:24px">No transactions yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+<!-- RIGHT Stats Panel -->
+<div style="display:flex;flex-direction:column;gap:16px">
+  <div class="card" style="margin-bottom:0">
+    <div class="card-header"><div class="card-title">Wallet Stats</div></div>
+    <div class="card-body" style="padding-top:8px">
+
+      <div class="g2" style="margin-bottom:12px">
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.6px">Wallet Balance</div>
+          <div style="font-size:16px;font-weight:800;color:var(--primary);font-family:'JetBrains Mono',monospace;letter-spacing:-.5px">₹<span id="cardBal">0</span></div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.6px">Cashback Earned</div>
+          <div style="font-size:16px;font-weight:800;color:var(--green);font-family:'JetBrains Mono',monospace;letter-spacing:-.5px">₹<span id="cashbackAmt">0</span></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="g2" style="margin-bottom:10px;margin-top:10px">
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.6px">Daily Spent</div>
+          <div style="font-size:15px;font-weight:800;font-family:'JetBrains Mono',monospace" id="walletDailySpent">₹0</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.6px">Daily Limit</div>
+          <div style="font-size:15px;font-weight:800;font-family:'JetBrains Mono',monospace">₹1,00,000</div>
+        </div>
+      </div>
+
+      <div class="progress-wrap" style="margin-bottom:4px">
+        <div class="progress-fill" id="dailyLimitBar" style="width:0%"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:14px" id="dailyLimitLabel">0% of daily limit used</div>
+
+      <div class="divider"></div>
+
+      <div style="margin-top:12px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.6px">Spending Limit</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <input type="range" id="spendLimitRange" min="1000" max="100000" step="1000" value="50000" oninput="updateSpendLimit()" style="flex:1">
+          <span style="font-weight:800;font-size:13px;color:var(--primary);min-width:68px;text-align:right;font-family:'JetBrains Mono',monospace" id="spendLimitLabel">₹50,000</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="safeStorage.setItem('sp_spend_limit', document.getElementById('spendLimitRange').value); toast('Spending limit saved ✅','success')">Save Limit</button>
+      </div>
+
+    </div>
+  </div>
+<!-- QUICK SEND -->
+<div class="card">
+  <div class="card-header"><div class="card-title">⚡ Quick Send</div></div>
+  <div class="card-body" style="padding-top:10px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px" id="quickContactsGrid"></div>
+    <div style="font-size:11px;color:var(--text3);font-weight:600">Tap a contact to send money instantly</div>
+  </div>
+</div>
+
+<!-- SECURITY OVERVIEW -->
+<div class="card">
+  <div class="card-header"><div class="card-title">🛡️ Security Overview</div></div>
+  <div class="card-body" style="padding-top:8px;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--green-light);border-radius:12px;border:1px solid rgba(6,214,160,.2)">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🔐</span><span style="font-size:12px;font-weight:700;color:var(--green)">End-to-end Encrypted</span></div>
+      <span style="font-size:11px;font-weight:800;color:var(--green)">ACTIVE</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--primary-light);border-radius:12px;border:1px solid rgba(67,97,238,.15)">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🛡️</span><span style="font-size:12px;font-weight:700;color:var(--primary)">Fraud Detection</span></div>
+      <span style="font-size:11px;font-weight:800;color:var(--primary)">MONITORING</span>
+    </div>
+    <div id="secCardFreezeStatus" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--green-light);border-radius:12px;border:1px solid rgba(6,214,160,.2)">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">💳</span><span style="font-size:12px;font-weight:700;color:var(--green)">Card Status</span></div>
+      <span id="secCardFreezeLabel" style="font-size:11px;font-weight:800;color:var(--green)">ACTIVE</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--purple-light);border-radius:12px;border:1px solid rgba(114,9,183,.15)">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">⭐</span><span style="font-size:12px;font-weight:700;color:var(--secondary)">Trust Score</span></div>
+      <span id="secTrustLabel" style="font-size:11px;font-weight:800;color:var(--secondary)">100 / 100</span>
+    </div>
+  </div>
+</div>
+
+</div>
+
+</div><!-- closes g2 grid -->
+
+</div>
+</div><!-- closes tab-wallet -->
 
       <!-- TRANSACTIONS -->
       <div id="tab-transactions" class="tab-panel">
@@ -795,7 +857,6 @@
             <div class="card-header"><div class="card-title">How to Earn</div></div>
             <div class="card-body" style="font-size:13px;line-height:2.6;color:var(--text2);font-weight:500">
               💸 Send money → <strong style="color:var(--text)">1 pt / ₹100</strong><br>
-              ➕ Add money → <strong style="color:var(--text)">0.5 pt / ₹200</strong><br>
               ✅ Complete KYC → <strong style="color:var(--text)">500 pts bonus</strong><br>
               🔒 No fraud flags → <strong style="color:var(--text)">100 pts/month</strong>
             </div>
@@ -1049,26 +1110,6 @@
     </div>
   </div>
 </div>
-  <!-- ADD MONEY MODAL -->
-<div class="overlay" id="addMoneyModal" onclick="overlayClickClose(event,'addMoneyModal')">
-  <div class="modal-sheet">
-    <div class="modal-handle"></div>
-    <div class="modal-head"><div class="modal-title">Add Money</div><div class="modal-sub">Top up your SecurePay wallet</div></div>
-    <div class="modal-body">
-      <div class="field"><label>Amount (₹)</label><input id="addAmtInput" type="number" placeholder="1000"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <button class="btn btn-tonal btn-sm" onclick="setAddAmt(500)">₹500</button>
-        <button class="btn btn-tonal btn-sm" onclick="setAddAmt(1000)">₹1,000</button>
-        <button class="btn btn-tonal btn-sm" onclick="setAddAmt(5000)">₹5,000</button>
-        <button class="btn btn-tonal btn-sm" onclick="setAddAmt(10000)">₹10,000</button>
-      </div>
-      <div style="display:flex;gap:10px">
-        <button class="btn btn-outlined btn-full" onclick="closeModal('addMoneyModal')">Cancel</button>
-        <button class="btn btn-primary btn-full" id="addMoneyBtn" onclick="confirmAddMoney()">Add Money</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- OTP MODAL -->
 <div class="overlay" id="otpModal">
@@ -1160,25 +1201,6 @@
   </div>
 </div>
 
-<!-- LINK BANK MODAL -->
-<div class="overlay" id="linkBankModal" onclick="overlayClickClose(event,'linkBankModal')">
-  <div class="modal-sheet">
-    <div class="modal-handle"></div>
-    <div class="modal-head"><div class="modal-title">Link Bank / UPI</div><div class="modal-sub">Connect your bank account to SecurePay</div></div>
-    <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-        <div class="bank-tile" onclick="addBank('SBI')"><div class="bank-icon" style="background:linear-gradient(135deg,#1565c0,#0d47a1)">🏛️</div><div><div style="font-size:13px;font-weight:700">State Bank of India</div><div style="font-size:11px;color:var(--text2)">YONO SBI</div></div></div>
-        <div class="bank-tile" onclick="addBank('HDFC')"><div class="bank-icon" style="background:linear-gradient(135deg,#c62828,#b71c1c)">🏦</div><div><div style="font-size:13px;font-weight:700">HDFC Bank</div><div style="font-size:11px;color:var(--text2)">NetBanking</div></div></div>
-        <div class="bank-tile" onclick="addBank('ICICI')"><div class="bank-icon" style="background:linear-gradient(135deg,#e65100,#bf360c)">💳</div><div><div style="font-size:13px;font-weight:700">ICICI Bank</div><div style="font-size:11px;color:var(--text2)">iMobile Pay</div></div></div>
-        <div class="bank-tile" onclick="addBank('Axis')"><div class="bank-icon" style="background:linear-gradient(135deg,#6a1b9a,#4a148c)">🏧</div><div><div style="font-size:13px;font-weight:700">Axis Bank</div><div style="font-size:11px;color:var(--text2)">Axis Mobile</div></div></div>
-      </div>
-      <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:16px;font-weight:500">Or enter UPI ID manually</div>
-      <div class="field"><label>UPI ID</label><input id="manualUpiInput" placeholder="yourname@upi"></div>
-      <button class="btn btn-primary btn-full" onclick="addManualUPI()">Link UPI →</button>
-    </div>
-  </div>
-</div>
-<!-- end linkBankModal -->
 <!-- TRANSACTION BLOCKED MODAL -->
 <div class="overlay" id="blockedModal">
   <div class="modal-sheet" style="max-width:420px">
@@ -1288,10 +1310,8 @@ let appState = {
     activeLoans: JSON.parse(safeStorage.getItem('sploans') || '[]'),
     completedLoans: JSON.parse(safeStorage.getItem('spcompletedLoans') || '[]'),
     transactions: JSON.parse(safeStorage.getItem('sptransactions') || '[]'),  // ← FIXED!
-    darkMode: safeStorage.getItem('spdark') === 'true',
     kycStep: parseInt(safeStorage.getItem('spkyc') || 1),
-    linkedBanks: JSON.parse(safeStorage.getItem('spbanks') || '[]'),
-    cardFrozen: safeStorage.getItem('spfrozen') === 'true',
+    cardFrozen: safeStorage.getItem('sp_frozen') === 'true',
     notifications: JSON.parse(safeStorage.getItem('spnotifications') || '[]')  // ← ALSO FIX THIS!
 };
 
@@ -1319,7 +1339,6 @@ function saveState() {
   safeStorage.setItem("sp_completedLoans",  JSON.stringify(appState.completedLoans || []));
   safeStorage.setItem("sp_kyc",     appState.kycStep);
   safeStorage.setItem("sp_dark",    appState.darkMode);
-  safeStorage.setItem("sp_banks",   JSON.stringify(appState.linkedBanks));
   safeStorage.setItem("sp_frozen",  appState.cardFrozen);
      safeStorage.setItem('sptransactions', JSON.stringify(appState.transactions));
     safeStorage.setItem('spnotifications', JSON.stringify(appState.notifications));
@@ -1607,7 +1626,8 @@ safeStorage.setItem(reviewKey, JSON.stringify(cleaned));
   const upiEl = document.getElementById("upiIdEl");
   if (upiEl) upiEl.textContent = appState.email.split("@")[0] + "@securepay";
   if (appState.role === "admin") addAdminNav();
- if (appState.cardFrozen) {
+appState.cardFrozen = safeStorage.getItem('sp_frozen') === 'true';
+if (appState.cardFrozen) {
     const overlay = document.getElementById("cardFrozenOverlay");
     if (overlay) overlay.classList.add("show");
     const btn = document.getElementById("freezeBtn");
@@ -1619,6 +1639,7 @@ safeStorage.setItem(reviewKey, JSON.stringify(cleaned));
     }
   }
 refreshDashboard();
+renderQuickContacts();
 renderPendingReviews();
 setTimeout(renderPendingReviews, 500);
 
@@ -1644,7 +1665,6 @@ const _bootReviews = JSON.parse(safeStorage.getItem(reviewKey) || "[]");
 if (_bootReviews.some(r => r.status === "pending")) {
   setTimeout(refreshSenderAfterApproval, 1500); // small delay so UI loads first
 }
-renderLinkedBanks();
 
 // Restore saved spend limit
 const savedSpendLimit = safeStorage.getItem('sp_spend_limit');
@@ -1750,7 +1770,8 @@ async function loadTransactions() {
         renderAllTxns(appState.transactions, myEmail);
         renderRecentTxns();
         renderCardTxns();
-        refreshTransactionStats();
+refreshTransactionStats();
+    renderQuickContacts();
     } catch(e) {
         console.log('loadTransactions error', e);
         appState.transactions = [];
@@ -1810,7 +1831,7 @@ function toggleWalletInfo(btn) {
 // ═══════════════════════════════════════
 // NOTIFICATIONS — REAL API VERSION
 // ═══════════════════════════════════════
-const NOTIF_ICONS = { sent:"💸", received:"💰", add_money:"➕", loan:"🏦", emi:"📅", reward:"🎁", security:"🔐", system:"💬" };
+const NOTIF_ICONS = { sent:"💸", received:"💰",loan:"🏦", emi:"📅", reward:"🎁", security:"🔐", system:"💬" };
 
 function timeAgo(dateStr) {
   const diff  = Date.now() - new Date(dateStr).getTime();
@@ -1938,12 +1959,12 @@ function updateFraudMeter() {
 
   bar.style.width = score + "%";
 
-  if (score >= 75) {
+if (score >= 70) {
     bar.style.background   = "var(--red)";
     label.style.background = "var(--red-light)";
     label.style.color      = "var(--red)";
     label.textContent      = "HIGH — Needs admin approval";
-  } else if (score >= 35) {
+  } else if (score >= 30) {
     bar.style.background   = "var(--orange)";
     label.style.background = "var(--orange-light)";
     label.style.color      = "var(--orange)";
@@ -2153,60 +2174,6 @@ function filterTxns() {
 }
 
 // ═══════════════════════════════════════
-// ADD MONEY
-// ═══════════════════════════════════════
-function setAddAmt(v) { document.getElementById("addAmtInput").value = v; }
-
-async function confirmAddMoney() {
-  const amt = parseFloat(document.getElementById("addAmtInput").value);
-  if (!amt || amt <= 0) { toast("Please enter a valid amount", "error"); return; }
-  if (amt > 100000)     { toast("Maximum ₹1,00,000 per top-up", "error"); return; }
-
-  // Store the amount and trigger PIN first
-  window._pendingAddMoney = amt;
-  closeModal("addMoneyModal");
-  openAddMoneyPIN();
-}
-
-function openAddMoneyPIN() {
-  payPinBuffer = "";
-  updatePayPinDots();
-  document.getElementById("payPinErr").textContent = "";
-  const stored = safeStorage.getItem(getPINKey());
-  payPinMode = stored ? "verify" : "set";
-  document.getElementById("pinModalSub").textContent = stored
-    ? "Enter your PIN to confirm adding money"
-    : "🆕 Create a 4-digit PIN to secure your wallet";
-  
-  // Temporarily swap the PIN confirm action
-  window._pinAction = "addMoney";
-  openModal("paymentPinModal");
-}
-async function _finalizeAddMoney() {
-  window._pinAction = null;
-  const amt = window._pendingAddMoney;
-  window._pendingAddMoney = null;
-  if (!amt) return;
-
-  const btn = document.getElementById("addMoneyBtn");
-  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
-  try {
-    const data = await api("POST", "payment/add-money", { amount: amt });
-    appState.balance   = data.balance;
-    appState.rewardPts = data.rewardPoints || appState.rewardPts;
-    saveState();
-    refreshDashboard();
-    document.getElementById("addAmtInput").value = "";
-    toast(`₹${fmt(amt)} added to your wallet! 🎉`, "success");
-  } catch (err) {
-    toast(err.message, "error");
-    openModal("addMoneyModal"); // reopen so user can retry
-  } finally {
-    if (btn) { btn.innerHTML = "Add Money"; btn.disabled = false; }
-  }
-}
-
-// ═══════════════════════════════════════
 // FEE CALCULATOR
 // ═══════════════════════════════════════
 function calcPlatformFee(amount) {
@@ -2256,7 +2223,7 @@ function pickNoteChip(el, label) {
 // FRAUD BLOCK SYSTEM
 // ═══════════════════════════════════════
 function getBlockThreshold() {
-  return 85; // block client-side if score >= 85
+  return 70; // block client-side if score >= 85
 }
 
 function computeFraudScore() {
@@ -2270,10 +2237,11 @@ function computeFraudScore() {
   const factors = [];
 
   // Amount
-  if (amount > 50000)      { score += 55; factors.push({ label:"Very large amount",   color:"var(--red)",    icon:"🔴" }); }
-  else if (amount > 20000) { score += 35; factors.push({ label:"High amount",         color:"var(--orange)", icon:"🟠" }); }
-  else if (amount > 5000)  { score += 15; factors.push({ label:"Medium amount",       color:"var(--orange)", icon:"🟡" }); }
-  else if (amount > 0)     { score +=  5; factors.push({ label:"Low amount",          color:"var(--green)",  icon:"🟢" }); }
+if      (amount >= 50000) { score += 80; factors.push({ label:"Very large amount (₹50k+)", color:"var(--red)",    icon:"🔴" }); }
+else if (amount >= 20000) { score += 40; factors.push({ label:"High amount (₹20k+)",       color:"var(--orange)", icon:"🟠" }); }
+else if (amount >= 5000)  { score += 25; factors.push({ label:"Medium amount (₹5k+)",      color:"var(--orange)", icon:"🟡" }); }
+else if (amount >= 1000)  { score += 10; factors.push({ label:"Moderate amount",            color:"var(--orange)", icon:"🟡" }); }
+else if (amount > 0)      { score +=  5; factors.push({ label:"Low amount",                 color:"var(--green)",  icon:"🟢" }); }
 
   // Velocity — multiple txns in last 10 mins
   const recentTxns = appState.transactions.filter(t => {
@@ -2295,18 +2263,18 @@ function computeFraudScore() {
 
   // New recipient
   const known = appState.transactions.map(t => t.receiver.toLowerCase());
- if (receiver && !known.includes(receiver.toLowerCase()) && amount > 10000) {
-  score += 10;  // was 15
-  factors.push({ label:"New recipient", color:"var(--orange)", icon:"👤" });
+if (receiver && !known.includes(receiver.toLowerCase()) && amount > 10000) {
+    score += 15;
+    factors.push({ label:"New recipient", color:"var(--orange)", icon:"👤" });
 }else if (receiver) {
     factors.push({ label:"Known recipient", color:"var(--green)", icon:"✅" });
   }
 
   // No location
-  if (!location) {
-  score += 5;  // was 20
-  factors.push({ label:"No location set", color:"var(--orange)", icon:"📍" });
-}
+if (!location) {
+    score += 20;
+    factors.push({ label:"No location set", color:"var(--orange)", icon:"📍" });
+  }
 
   // Odd hours
   const hour = new Date().getHours();
@@ -2679,8 +2647,7 @@ function toggleCardFreeze() {
   const overlay = document.getElementById("cardFrozenOverlay");
   const btn     = document.getElementById("freezeBtn");
   if (appState.cardFrozen) {
-    if (overlay) overlay.style.display = "flex";
-    overlay?.classList.add("show");
+if (overlay) overlay.classList.add("show");
     if (btn) {
       btn.textContent      = "🔥 Unfreeze Card";
       btn.style.background = "var(--red-light)";
@@ -2689,8 +2656,7 @@ function toggleCardFreeze() {
     }
     toast("Card frozen 🥶 Transactions blocked.", "warning");
   } else {
-    if (overlay) overlay.style.display = "none";
-    overlay?.classList.remove("show");
+if (overlay) overlay.classList.remove("show");
     if (btn) {
       btn.textContent      = "🥶 Freeze Card";
       btn.style.background = "var(--orange-light)";
@@ -2721,10 +2687,6 @@ function openPaymentPIN() {
   // Always check fresh from storage — never trust cached mode
   const stored = safeStorage.getItem(getPINKey());
   payPinMode = stored ? "verify" : "set";
-  
-  document.getElementById("pinModalSub").textContent = stored
-    ? "Enter your 4-digit payment PIN to confirm"
-    : "🆕 First time? Create a 4-digit payment PIN";
   openModal("paymentPinModal");
 }
 function payPinKey(val) {
@@ -2750,10 +2712,10 @@ function checkPaymentPIN() {
     safeStorage.setItem(getPINKey(), payPinBuffer);
     toast("Payment PIN created! 🔐", "success");
     closeModal("paymentPinModal");
-    window._pinAction === "addMoney" ? _finalizeAddMoney() : finalizePayment();
+    finalizePayment();
   } else if (payPinBuffer === stored) {
     closeModal("paymentPinModal");
-    window._pinAction === "addMoney" ? _finalizeAddMoney() : finalizePayment();
+    finalizePayment();
   } else {
     document.getElementById("payPinErr").textContent = "Wrong PIN. Try again.";
     document.querySelectorAll("#payPinDots .pin-dot").forEach(d => {
@@ -2766,8 +2728,6 @@ function checkPaymentPIN() {
 
 function cancelPaymentPIN() {
   closeModal("paymentPinModal");
-  window._pinAction = null;
-  window._pendingAddMoney = null;
   pendingPayment = null;
   toast("Cancelled", "info");
 }
@@ -2819,6 +2779,60 @@ return;
     pendingPayment = null;
   }
 }
+function renderQuickContacts() {
+  const grid = document.getElementById("quickContactsGrid");
+  if (!grid) return;
+  const myEmail = appState.email.toLowerCase().trim();
+  const seen = new Set();
+  const contacts = appState.transactions
+    .filter(t => t.sender.toLowerCase() === myEmail)
+    .reduce((acc, t) => {
+      if (!seen.has(t.receiver)) { seen.add(t.receiver); acc.push({ email: t.receiver, amount: t.amount }); }
+      return acc;
+    }, []).slice(0, 5);
+  if (!contacts.length) {
+    grid.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:8px 0">Send money to someone to see them here</div>`;
+  } else {
+    grid.innerHTML = contacts.map(c => {
+      const initials  = (c.email[0] || "?").toUpperCase();
+      const shortName = c.email.split("@")[0].slice(0, 10);
+      return `<div onclick="quickSendTo('${c.email}')" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:10px 14px;border-radius:14px;background:var(--surface2);border:1px solid var(--border);transition:all .2s;min-width:64px"
+        onmouseover="this.style.background='var(--primary-light)';this.style.borderColor='var(--primary)'"
+        onmouseout="this.style.background='var(--surface2)';this.style.borderColor='var(--border)'">
+        <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:white">${initials}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shortName}</div>
+        <div style="font-size:10px;color:var(--text3);font-weight:600">₹${fmt(c.amount)}</div>
+      </div>`;
+    }).join("");
+  }
+  const freezeStatus = document.getElementById("secCardFreezeStatus");
+  const freezeLabel  = document.getElementById("secCardFreezeLabel");
+  if (freezeStatus && freezeLabel) {
+    if (appState.cardFrozen) {
+      freezeStatus.style.background = "var(--orange-light)";
+      freezeStatus.style.border     = "1px solid rgba(251,133,0,.2)";
+      freezeLabel.style.color       = "var(--orange)";
+      freezeLabel.textContent       = "FROZEN";
+    } else {
+      freezeStatus.style.background = "var(--green-light)";
+      freezeStatus.style.border     = "1px solid rgba(6,214,160,.2)";
+      freezeLabel.style.color       = "var(--green)";
+      freezeLabel.textContent       = "ACTIVE";
+    }
+  }
+  const trustLabel = document.getElementById("secTrustLabel");
+  if (trustLabel) trustLabel.textContent = appState.trustScore + " / 100";
+}
+
+function quickSendTo(email) {
+  gotoTab("send");
+  setTimeout(() => {
+    document.getElementById("sendReceiver").value = email;
+    document.getElementById("sendReceiver").dispatchEvent(new Event("input"));
+    toast("Recipient pre-filled! Enter amount to send 💸", "info");
+  }, 200);
+}
+
 function copyUPI() {
   const upi = document.getElementById("upiIdEl").textContent;
   navigator.clipboard?.writeText(upi).then(() => toast("UPI ID copied! 📋","success")).catch(() => toast("UPI: "+upi,"info"));
@@ -2831,57 +2845,6 @@ function sendViaUPI() {
     toast("Enter the recipient's UPI ID to send money 💸", "info");
   }, 200);
 }
-function addBank(bankName) {
-  if (appState.linkedBanks.includes(bankName)) { toast(bankName+" already linked","info"); return; }
-  appState.linkedBanks.push(bankName);
-  saveState();
-  renderLinkedBanks();
-  closeModal("linkBankModal");
-  toast(bankName+" linked successfully! 🏦","success");
-}
-function addManualUPI() {
-  const upi = document.getElementById("manualUpiInput").value.trim();
-  if (!upi || !upi.includes("@")) { toast("Enter a valid UPI ID (e.g. yourname@upi)","error"); return; }
-  appState.linkedBanks.push(upi);
-  saveState();
-  renderLinkedBanks();
-  closeModal("linkBankModal");
-  toast("UPI "+upi+" linked! ✅","success");
-}
-function renderLinkedBanks() {
-  const body = document.getElementById("linkedBanksBody");
-  if (!body) return;
-  if (!appState.linkedBanks.length) {
-    body.innerHTML = `<div style="color:var(--text2);font-size:13px;text-align:center;padding:16px 0">No banks linked yet. <br>Use the Link Bank / UPI button above.</div>`;
-    return;
-  }
-  const icons = { SBI:"🏛️", HDFC:"🏦", ICICI:"💳", Axis:"🏧" };
-  body.innerHTML = appState.linkedBanks.map(b => `
-    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--surface2)">
-      <div style="width:36px;height:36px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:16px">${icons[b] || "🏦"}</div>
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:700">${b}</div>
-        <div style="font-size:11px;color:var(--green);font-weight:600">✅ Linked</div>
-      </div>
-      <button class="btn btn-tonal btn-sm" onclick="pullFromBank('${b}')">Pull ₹</button>
-      <button class="btn btn-sm" style="background:var(--red-light);color:var(--red)" onclick="unlinkBank('${b}')">Unlink</button>
-    </div>
-  `).join('');
-}
-function pullFromBank(bankName) {
-  const amt = prompt(`Pull money from ${bankName}?\nEnter amount (₹):`, "5000");
-  if (!amt || isNaN(amt) || Number(amt) <= 0) return;
-  openModal('addMoneyModal');
-  document.getElementById('addAmtInput').value = Number(amt);
-  toast(`Pulling ₹${fmt(Number(amt))} from ${bankName}...`, "info");
-}
-function unlinkBank(name) {
-  appState.linkedBanks = appState.linkedBanks.filter(b => b !== name);
-  saveState();
-  renderLinkedBanks();
-  toast(name+" unlinked","info");
-}
-
 // ═══════════════════════════════════════
 // KYC
 // ═══════════════════════════════════════

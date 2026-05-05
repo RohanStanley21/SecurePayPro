@@ -257,18 +257,96 @@ body {
 .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:100px;font-size:11px;font-weight:700;font-family:'Sora',sans-serif}
 .chip-green{background:var(--green-light);color:var(--green)}.chip-orange{background:var(--orange-light);color:var(--orange)}.chip-red{background:var(--red-light);color:var(--red)}.chip-blue{background:var(--primary-light);color:var(--primary)}.chip-gray{background:var(--surface2);color:var(--text2)}
 .amount-debit{color:var(--red);font-weight:700}.amount-credit{color:var(--green);font-weight:700}
-.vcard{border-radius:22px;padding:26px;position:relative;overflow:hidden;max-width:340px;cursor:pointer;transition:transform .35s cubic-bezier(.34,1.56,.64,1),box-shadow .35s;aspect-ratio:1.586}
-.vcard:hover{transform:translateY(-6px) rotateX(4deg) rotateY(2deg);box-shadow:0 20px 50px rgba(0,0,0,.3)}
-.vcard-visa{background:linear-gradient(135deg,#4361ee,#1e2e9e)}
-.vcard-chip{width:42px;height:32px;background:linear-gradient(135deg,#ffd700,#c8a000);border-radius:6px;margin-bottom:30px}
-.vcard-num{font-family:'JetBrains Mono',monospace;font-size:16px;letter-spacing:3px;color:rgba(255,255,255,.9);margin-bottom:22px}
-.vcard-name{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,.8);font-weight:600}
-.vcard-expiry{font-size:11px;color:rgba(255,255,255,.65);font-family:'JetBrains Mono',monospace}
-.vcard-type{position:absolute;top:22px;right:22px;font-size:16px;font-weight:800;color:white;opacity:.9}
-.vcard-circle1{position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.07)}
-.vcard-circle2{position:absolute;bottom:-40px;left:-20px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.05)}
-.vcard-frozen{position:absolute;inset:0;background:rgba(8,13,23,.75);display:none;align-items:center;justify-content:center;border-radius:22px;backdrop-filter:blur(4px);z-index:10}
-.vcard-frozen.show{display:flex !important}
+.vcard {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #533483 100%);
+  border-radius: 20px;
+  padding: 28px 24px 20px;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  min-height: 190px;
+  box-shadow: 0 20px 60px rgba(83,52,131,0.4), 0 8px 24px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+.vcard::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+  pointer-events: none;
+}
+.vcard-circle1 {
+  position: absolute;
+  width: 250px; height: 250px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  top: -90px; right: -70px;
+}
+.vcard-circle2 {
+  position: absolute;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  bottom: -50px; right: 50px;
+}
+.vcard-chip {
+  width: 38px; height: 28px;
+  background: linear-gradient(135deg, #f0c040, #c8960c);
+  border-radius: 6px;
+  margin-bottom: 20px;
+  position: relative;
+  z-index: 1;
+}
+.vcard-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  margin-bottom: 18px;
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.vcard-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.9;
+  position: relative;
+  z-index: 1;
+}
+.vcard-expiry {
+  font-size: 12px;
+  opacity: 0.7;
+  font-family: 'JetBrains Mono', monospace;
+  position: relative;
+  z-index: 1;
+}
+.vcard-frozen {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  border-radius: 20px;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  backdrop-filter: blur(3px);
+}
+.vcard-frozen.show { display: flex; }
+.vcard-type {
+  position: absolute;
+  bottom: 20px; right: 24px;
+  font-size: 18px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -1px;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  z-index: 1;
+}
 .progress-wrap{background:var(--surface2);border-radius:4px;height:6px;overflow:hidden}
 .progress-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--primary),var(--secondary));transition:width 1s ease}
 .loan-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--card-shadow);transition:all .25s}
@@ -450,6 +528,24 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   padding: 20px;
 }
 #adminAlertsList { max-height: 240px; overflow-y: auto; }
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --surface3: #30363d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text2: #8b949e;
+  --text3: #484f58;
+  --card-shadow: 0 2px 12px rgba(0,0,0,.4), 0 1px 3px rgba(0,0,0,.3);
+  --card-shadow-hover: 0 12px 32px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.4);
+  --primary-light: #1c2a4a;
+  --green-light: #0a2a22;
+  --red-light: #2d1318;
+  --orange-light: #2a1a00;
+  --purple-light: #1e0a2e;
+}
+
 [data-theme="dark"] #loginScreen {
   background: #0d1117 !important;
 }

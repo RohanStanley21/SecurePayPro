@@ -165,38 +165,6 @@ router.get("/balance", auth, async (req, res) => {
     res.status(500).json({ message: "Server error ❌" });
   }
 });
-
-// ─────────────────────────────────────────────────────────
-// ➕  ADD MONEY
-// ─────────────────────────────────────────────────────────
-router.post("/add-money", auth, async (req, res) => {
-  try {
-    let { amount } = req.body;
-    amount = Number(amount);
-    if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount ❌" });
-    if (amount > 100000)        return res.status(400).json({ message: "Max ₹1,00,000 per top-up ❌" });
-
-    const user = await User.findById(req.user.id);
-    user.balance      += amount;
-    user.rewardPoints  = (user.rewardPoints || 0) + Math.floor(amount / 200);
-    await user.save();
-    await createNotif(
-  user.email, "add_money", "Money Added ✅",
-  `₹${amount.toLocaleString("en-IN")} added to your wallet. New balance: ₹${user.balance.toLocaleString("en-IN")}`,
-  amount, "", "➕"
-);
-
-    const msg = `SecurePay: Rs.${amount.toLocaleString("en-IN")} added to your wallet. New balance: Rs.${user.balance.toLocaleString("en-IN")}. -SecurePay Pro`;
-    await sendEmail(user.email, "SecurePay — Money Added to Wallet", msg);
-    if (user.phone) sendSMS(user.phone, msg).catch(() => {});
-
-    res.json({ message: `₹${amount.toLocaleString("en-IN")} added ✅`, balance: user.balance, rewardPoints: user.rewardPoints });
-  } catch (err) {
-    console.log("ADD-MONEY ERROR:", err);
-    res.status(500).json({ message: "Server error ❌" });
-  }
-});
-
 // ─────────────────────────────────────────────────────────
 // 📤  SEND OTP
 // ─────────────────────────────────────────────────────────
