@@ -1762,7 +1762,7 @@ function initDashChart() {
 async function loadTransactions() {
     try {
         const data = await api('GET', 'payment/my');
-        appState.transactions = data.transactions.filter(t => t.status === 'completed' || !t.status);
+        appState.transactions = data.transactions.filter(t => t.status === 'completed');
         
         saveState(); // ← ADD THIS LINE!
         
@@ -1771,7 +1771,8 @@ async function loadTransactions() {
         renderRecentTxns();
         renderCardTxns();
 refreshTransactionStats();
-    renderQuickContacts();
+renderQuickContacts();
+    if (document.getElementById('tab-analytics')?.classList.contains('active')) initAnalytics();
     } catch(e) {
         console.log('loadTransactions error', e);
         appState.transactions = [];
@@ -2065,7 +2066,7 @@ function refreshDashboard() {
 
 function refreshTransactionStats() {
   const myEmail  = appState.email.toLowerCase().trim();
-  const sent     = appState.transactions.filter(t => t.sender.toLowerCase()   === myEmail).reduce((s,t) => s+t.amount, 0);
+  const sent     = appState.transactions.filter(t => t.sender.toLowerCase()   === myEmail).reduce((s,t) => s+t.amount+(t.platformFee||0), 0);
   const received = appState.transactions.filter(t => t.receiver.toLowerCase() === myEmail).reduce((s,t) => s+t.amount, 0);
   document.getElementById("statSent").textContent     = "₹" + fmt(sent);
   document.getElementById("statReceived").textContent = "₹" + fmt(received);

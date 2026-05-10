@@ -205,7 +205,7 @@ router.post("/send-otp", auth, async (req, res) => {
       // ✅ FIX: check daily limit even for low-risk (no OTP) payments
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const todayTxns  = await Transaction.find({ sender: sender.email, createdAt: { $gte: todayStart } });
+      const todayTxns  = await Transaction.find({ sender: sender.email, createdAt: { $gte: todayStart }, status: "completed" });
       const todayTotal = todayTxns.reduce((s, t) => s + t.amount, 0);
 
       if (todayTotal + amount > 100000) {
